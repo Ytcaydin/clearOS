@@ -54,7 +54,55 @@ public final class DeviceToolsActivity extends Activity {
     }
     private void add(View child,int top){content.addView(child,ModernUi.space(this,-1,-2,top));}
     private void note(String msg){add(ModernUi.muted(this,msg,12),9);}
-    private void alert(String title,String msg){new AlertDialog.Builder(this).setTitle(title).setMessage(msg).setPositiveButton("Tamam",null).show();}
+    private void alert(String title,String msg){if(isFinishing()||isDestroyed())return;
+        new AlertDialog.Builder(this).setTitle(title).setMessage(msg).setPositiveButton("Tamam",null).show();}
+
+    private static final int REQ_SYSTEM_CACHE=611;
+    private long systemCacheFreeBefore=-1;
+
+    /** Free bytes on the internal data volume (where app caches live). */
+    private static long freeBytes(){
+        try{return new android.os.StatFs(Environment.getDataDirectory().getPath()).getAvailableBytes();}
+        catch(RuntimeException e){return -1;}
+    }
+    private static String freedText(long before,long after){
+        if(before<0||after<0)return "Boş alan ölçülemedi.";
+        long diff=after-before;
+        String now="Şu an boş: "+ModernUi.bytes(after);
+        if(diff>=1024*1024)return "Açılan alan: yaklaşık "+ModernUi.bytes(diff)+"\n"+now;
+        return "Ölçülebilir bir alan açılmadı (önbellekler zaten küçük olabilir).\n"+now;
+    }
+
+    /** ADB trim with a visible, non-cancelable progress dialog and a before/after free-space report. */
+    private void runAdbTrim(){
+        long before=freeBytes();
+        android.widget.TextView status=ModernUi.muted(this,"Hazırlanıyor…",14);
+        int pad=(int)(22*getResources().getDisplayMetrics().density);
+        status.setPadding(pad,pad/2,pad,pad/2);
+        AlertDialog waiting=new AlertDialog.Builder(this).setTitle("ADB önbellek temizliği")
+                .setView(status).setCancelable(false).show();
+        access.trimCaches(message->status.setText(message),result->{
+            if(waiting.isShowing())try{waiting.dismiss();}catch(RuntimeException ignored){}
+            String clean=result==null?"":result.trim();
+            boolean ok=clean.startsWith("pm trim-caches çıkış kodu: 0");
+            String report=(ok?"Android önbellek daraltmayı tamamladı.\n\n":clean+"\n\n")+freedText(before,freeBytes());
+            ActionLog.add(this,"ADB önbellek",report.replace('\n',' '));
+            alert(ok?"Tamamlandı":"İşlem sonucu",report);
+        });
+    }
+
+    @Override protected void onActivityResult(int request,int result,Intent data){
+        super.onActivityResult(request,result,data);
+        if(request!=REQ_SYSTEM_CACHE)return;
+        long before=systemCacheFreeBefore;systemCacheFreeBefore=-1;
+        String report;
+        if(result==RESULT_OK) report="Android harici önbellek temizliğini onayladı.\n\n"+freedText(before,freeBytes());
+        else report="Android ekranı iptal edildi ya da bu telefonda gösterilmedi.\n\n"
+                +"Bazı telefonlar temizlenecek harici önbellek yoksa ekranı hiç açmadan kapatır. "
+                +"Ultra Mod'daki ADB önbellek temizliği daha kapsamlıdır.";
+        ActionLog.add(this,"Sistem önbellek ekranı",report.replace('\n',' '));
+        alert(result==RESULT_OK?"Tamamlandı":"Temizlik yapılmadı",report);
+    }
     private void apps(){
         add(ModernUi.section(this,"Uygulama envanteri","Sistem uygulamaları silinmez; kaldırma sistem ayarlarında yapılır."),2);
         if(!AppInsights.hasUsageAccess(this)){
@@ -148,16 +196,17 @@ public final class DeviceToolsActivity extends Activity {
         add(ModernUi.section(this,"Önbellek işlemleri","Android'in izin verdiği kapsamla sınırlıdır"),24);
         add(ModernUi.actionCard(this,"◉","Android sistem ekranı","Kullanıcı onayıyla harici önbellek temizleme",()->{
             if(!Environment.isExternalStorageManager()) {alert("İzin gerekli","Önce Tüm dosyalara erişim izni ver.");return;}
-            try{startActivityForResult(new Intent(StorageManager.ACTION_CLEAR_APP_CACHE),611);}
-            catch(Exception e){alert("Desteklenmiyor","Telefon bu ekranı sunmuyor.");}
+            systemCacheFreeBefore=freeBytes();
+            try{startActivityForResult(new Intent(StorageManager.ACTION_CLEAR_APP_CACHE),REQ_SYSTEM_CACHE);}
+            catch(Exception e){systemCacheFreeBefore=-1;
+                ActionLog.add(this,"Sistem önbellek ekranı","Açılamadı: "+e.getClass().getSimpleName());
+                alert("Desteklenmiyor","Telefon bu ekranı sunmuyor.");}
         }),12);
         add(ModernUi.actionCard(this,"⚡","ADB önbelleğini daralt","pm trim-caches 999G; sonuç cihazdan cihaza değişebilir",()->{
             if(!access.approved()){alert("İzin yok","Önce Shizuku servisi ve uygulama izni gerekli.");return;}
             new AlertDialog.Builder(this).setTitle("ADB önbellek temizliği")
                     .setMessage("Android'in desteklediği önbellekleri azaltmayı dener. Bazı sistemler komutu reddedebilir. Devam edilsin mi?")
-                    .setNegativeButton("Vazgeç",null).setPositiveButton("Çalıştır",(d,w)->{
-                        access.trimCaches(result->{ActionLog.add(this,"ADB önbellek",result);alert("İşlem sonucu",result);});
-                    }).show();
+                    .setNegativeButton("Vazgeç",null).setPositiveButton("Çalıştır",(d,w)->runAdbTrim()).show();
         }),9);
     }
     /** Read-only on-device checks: no shell commands, no file changes and no telemetry. */

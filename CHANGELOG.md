@@ -1,5 +1,11 @@
 # Sürüm Geçmişi
 
+## 5.0.0-rc2.1 — Önbellek işlemleri geri bildirimi (2026-11-06)
+- **ADB önbelleğini daralt:** "Çalıştır"dan sonra anında ilerleme penceresi (servis başlatılıyor → önbellekler daraltılıyor); 20 sn bağlantı ve 2 dk toplam zaman aşımı; servis kapanırsa hata mesajı. Önceden servis bağlanamazsa ekran sessiz kalıyordu.
+- **Sonuç:** Öncesi/sonrası boş alan farkı gösteriliyor ("Açılan alan: yaklaşık X"); `pm` mutlak yolla çalıştırılıyor.
+- **Android sistem ekranı:** Dönüş sonucu artık işleniyor; ekran iptal edilir ya da telefon göstermezse kullanıcıya açıklama çıkıyor.
+- Her iki işlem de işlem günlüğüne yazılıyor.
+
 ## Sabit imza — doğrudan güncelleme (2026-11-06)
 - CI artık her derlemede rastgele değil, `CLEAROS_DEBUG_KEYSTORE` GitHub secret'ındaki sabit anahtarla imzalıyor; yeni APK eskisinin üzerine **güncelleme** olarak kurulur, ayarlar korunur.
 - Secret yoksa derleme yine çalışır ama uyarı verir (rastgele anahtar).

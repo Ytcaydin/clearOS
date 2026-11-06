@@ -14,7 +14,7 @@ public class UltraUserService extends IUltraService.Stub {
             return "Yetki yok: ADB shell veya root UID bulunamadı";
         // pm trim-caches expects a TARGET FREE SPACE, not bytes to delete.
         // A high target asks Android to trim as much eligible cache as it permits.
-        ProcessBuilder shell=new ProcessBuilder("pm","trim-caches","999G","internal");
+        ProcessBuilder shell=new ProcessBuilder("/system/bin/pm","trim-caches","999G","internal");
         shell.redirectErrorStream(true);
         try {
             java.lang.Process command=shell.start();

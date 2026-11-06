@@ -27,30 +27,58 @@ public final class UltraAccess {
     public void request() {
         try {if(running()&&!approved())Shizuku.requestPermission(REQUEST);}catch(Throwable ignored) { }
     }
-    public void trimCaches(Callback cb) {
+    /** Optional stage updates for the UI ("Servis başlatılıyor…", "Önbellekler daraltılıyor…"). */
+    public interface Stage {void update(String message);}
+
+    // Generous: binding a cold user-service process + pm walking every package can take ~1 min.
+    private static final long CONNECT_TIMEOUT_MS=20_000, TOTAL_TIMEOUT_MS=120_000;
+
+    public void trimCaches(Callback cb) {trimCaches(null,cb);}
+
+    /**
+     * Always calls cb exactly once on the main thread: with the result, an error, or a timeout.
+     * Previously a user-service that never connected left the UI silent forever.
+     */
+    public void trimCaches(Stage stage,Callback cb) {
         if(!approved()) {cb.done("Shizuku/Porter çalışmıyor veya izni verilmemiş.");return;}
+        android.os.Handler main=new android.os.Handler(android.os.Looper.getMainLooper());
+        java.util.concurrent.atomic.AtomicBoolean finished=new java.util.concurrent.atomic.AtomicBoolean(false);
+        java.util.concurrent.atomic.AtomicBoolean connected=new java.util.concurrent.atomic.AtomicBoolean(false);
         Shizuku.UserServiceArgs args=new Shizuku.UserServiceArgs(
                 new ComponentName(context,UltraUserService.class))
-                .daemon(false).processNameSuffix("ultra").version(3);
+                .daemon(false).processNameSuffix("ultra").version(4);
+        java.util.function.Consumer<String> finish=message->main.post(()->{
+            if(!finished.compareAndSet(false,true))return;
+            cb.done(message);
+            try {Shizuku.unbindUserService(args,connection,true);}catch(Throwable ignored){}
+            service=null;
+        });
         connection=new ServiceConnection() {
             @Override public void onServiceConnected(ComponentName name,IBinder binder) {
+                if(binder==null||!binder.pingBinder()){finish.accept("Shizuku servisi bağlandı ama yanıt vermiyor. Shizuku'yu yeniden başlatıp tekrar dene.");return;}
+                connected.set(true);
                 service=IUltraService.Stub.asInterface(binder);
+                if(stage!=null)main.post(()->stage.update("Önbellekler daraltılıyor… (1 dakikaya kadar sürebilir)"));
+                IUltraService bound=service;
                 new Thread(()->{
                     String result;
-                    try {result=service.trimCaches();}
+                    try {result=bound.trimCaches();}
                     catch(RemoteException|RuntimeException e){result="ADB işlemi başarısız: "+e.getMessage();}
-                    String done=result;
-                    android.os.Handler main=new android.os.Handler(android.os.Looper.getMainLooper());
-                    main.post(()->{
-                        cb.done(done);
-                        try {Shizuku.unbindUserService(args,connection,true);}catch(Throwable ignored){}
-                        service=null;
-                    });
+                    finish.accept(result);
                 },"ultra-cache-cleaner").start();
             }
-            @Override public void onServiceDisconnected(ComponentName name) {service=null;}
+            @Override public void onServiceDisconnected(ComponentName name) {
+                service=null;
+                finish.accept("Shizuku servisi işlem sırasında kapandı.");
+            }
         };
+        if(stage!=null)stage.update("Shizuku servisi başlatılıyor…");
+        main.postDelayed(()->{if(!connected.get())finish.accept(
+                "Shizuku servisi 20 saniyede bağlanamadı. Shizuku uygulamasında servisin çalıştığını kontrol edip tekrar dene.");},
+                CONNECT_TIMEOUT_MS);
+        main.postDelayed(()->finish.accept("İşlem 2 dakikada tamamlanmadı (zaman aşımı)."),TOTAL_TIMEOUT_MS);
         try {Shizuku.bindUserService(args,connection);}
-        catch(Throwable e) {cb.done("Servis başlatılamadı: "+e.getClass().getSimpleName());}
+        catch(Throwable e) {finish.accept("Servis başlatılamadı: "+e.getClass().getSimpleName()+
+                (e.getMessage()==null?"":" — "+e.getMessage()));}
     }
 }
