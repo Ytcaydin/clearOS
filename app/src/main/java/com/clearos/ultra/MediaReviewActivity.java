@@ -113,7 +113,7 @@ public final class MediaReviewActivity extends Activity {
         android.content.SharedPreferences p=getSharedPreferences("excluded",0);
         ExcludedPaths exclusions=new ExcludedPaths(p.getBoolean("DCIM",false),p.getBoolean("Documents",false),p.getBoolean("Download",false));
         io.execute(()->{
-            ImageInspector.Results report=ImageInspector.inspect(StorageRoots.available(this),new SafeScanner.Progress(){
+            ImageInspector.Results report=ImageInspector.inspect(this,StorageRoots.available(this),new SafeScanner.Progress(){
                 public boolean isCancelled(){return stopped.get()||Thread.currentThread().isInterrupted();}
                 public boolean exclude(File file){return exclusions.excludes(file);}
                 public void onUpdate(long count,String path){

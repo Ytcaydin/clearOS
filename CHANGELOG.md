@@ -1,5 +1,10 @@
 # Sürüm Geçmişi
 
+## 5.0.0-rc2.3 — Taramalar en yüksek hıza (2026-11-06)
+- **Ana tarama:** Dosya başına tek `lstat` (önceden symlink/klasör/dosya/boyut/tarih için 5 ayrı FUSE çağrısı); alt klasör yolları birleştirmeyle (klasör başına 3 `getCanonicalPath` kalktı); klasör listeleme ve kopya dosya özetleri (örnek + SHA-256) 2–6 iş parçacığında paralel. Eski tarayıcıyla 37.886 dosyalık ağaçta sonuçlar birebir aynı.
+- **Fotoğraf dedektifi:** Fotoğraf listesi depolamayı gezmek yerine Android medya dizininden (MediaStore) tek sorguyla, en yeniden eskiye; boyutlar dizinden geldiği için başlık okuma atlanıyor; 6 iş parçacığına kadar paralel çözümleme, bir grup çözülürken sonraki hazırlanıyor. Medya dizini yoksa eski klasör taraması devreye girer.
+- Not: `.nomedia` içeren klasörlerdeki fotoğraflar (ör. WhatsApp "Sent") medya dizininde olmadığı için fotoğraf dedektifinde yer almaz; ana tarama bu klasörleri yine kapsar.
+
 ## 5.0.0-rc2.2 — Fotoğraf dedektifi hızlandırma (2026-11-06)
 - **Hız:** Fotoğraflar 60'lık gruplar halinde paralel (çekirdek sayısı − 1, en fazla 4 iş parçacığı) çözülüyor; sonuçlar tarama sırasıyla birleştiriliyor, çıktı değişmiyor.
 - **Hız:** Bulanıklık ve benzerlik ölçümü `getPixel` yerine tek `getPixels` okumasıyla (fotoğraf başına ~130 bin JNI çağrısı → 2).

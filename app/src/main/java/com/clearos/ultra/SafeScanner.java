@@ -4,6 +4,8 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayDeque;
@@ -17,6 +19,10 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 
 /** Offline-only, non-root scanner. Never deletes anything during scanning. */
 public final class SafeScanner {
@@ -95,20 +101,62 @@ public final class SafeScanner {
         final File root;
         final long size;
         final long modified;
-        Snapshot(File file, File root) {
-            this.file = file; this.root = root;
-            this.size = file.length(); this.modified = file.lastModified();
+        Snapshot(File file, File root, long size, long modified) {
+            this.file = file; this.root = root; this.size = size; this.modified = modified;
         }
     }
 
     private static final class Directory {
         final File file;
         final File root;
+        /** Canonical path. Children are never symlinks (lstat-checked), so parent + "/" + name stays canonical. */
+        final String path;
         final int depth;
-        Directory(File f, File r, int d) { file=f; root=r; depth=d; }
+        Directory(File f, File r, String p, int d) { file=f; root=r; path=p; depth=d; }
+    }
+
+    /** One child as seen by a single lstat: replaces isSymbolicLink + isDirectory + isFile + length + lastModified. */
+    private static final class Entry {
+        final File file; final boolean directory; final long size, modified;
+        Entry(File f, boolean d, long s, long m) { file=f; directory=d; size=s; modified=m; }
+    }
+
+    private static final class Listing {
+        final List<Entry> entries; final boolean failed, empty; final long modified;
+        Listing(List<Entry> e, boolean failed, boolean empty, long modified) {
+            entries=e; this.failed=failed; this.empty=empty; this.modified=modified;
+        }
+    }
+
+    /** I/O-bound over FUSE: more threads than cores still helps, but stay modest for battery/heat. */
+    private static int ioThreads() { return Math.max(2, Math.min(6, Runtime.getRuntime().availableProcessors())); }
+
+    /** Runs on a worker thread. Pure I/O: no shared state. */
+    private static Listing list(Directory d, Progress progress) {
+        File[] children;
+        try { children = d.file.listFiles(); } catch (SecurityException e) { children = null; }
+        if (children == null) return new Listing(Collections.emptyList(), true, false, 0L);
+        if (children.length == 0) return new Listing(Collections.emptyList(), false, true, d.file.lastModified());
+        List<Entry> out = new ArrayList<>(children.length);
+        for (File child : children) {
+            if (progress.isCancelled()) break;
+            try {
+                BasicFileAttributes a = Files.readAttributes(child.toPath(), BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
+                if (a.isSymbolicLink()) continue;
+                if (a.isDirectory()) out.add(new Entry(child, true, 0L, 0L));
+                else if (a.isRegularFile()) out.add(new Entry(child, false, a.size(), a.lastModifiedTime().toMillis()));
+            } catch (IOException | SecurityException | UnsupportedOperationException ignored) { /* vanished or unreadable */ }
+        }
+        return new Listing(out, false, false, 0L);
     }
 
     public static ScanResult scan(List<File> roots, Progress progress) {
+        ExecutorService pool = Executors.newFixedThreadPool(ioThreads());
+        try { return scan(roots, progress, pool); }
+        finally { pool.shutdownNow(); }
+    }
+
+    private static ScanResult scan(List<File> roots, Progress progress, ExecutorService pool) {
         ScanResult out = new ScanResult();
         Map<Long, List<Snapshot>> lengths = new HashMap<>();
         ArrayList<Snapshot> ordinary = new ArrayList<>();
@@ -118,74 +166,99 @@ public final class SafeScanner {
         long now = System.currentTimeMillis();
 
         for (File r : roots) {
-            if (r != null && r.isDirectory()) pending.add(new Directory(r, r, 0));
+            try {
+                if (r != null && r.isDirectory() && !Files.isSymbolicLink(r.toPath()))
+                    pending.add(new Directory(r, r, r.getCanonicalPath(), 0));
+            } catch (IOException | SecurityException ignored) { out.inaccessibleDirectories++; }
         }
+        // Directories are listed in parallel "waves"; results are merged on this thread only.
+        // Visit order differs from a strict DFS, but every collection below is order-independent
+        // or explicitly sorted, so the final result is the same.
+        final int wave = ioThreads() * 3;
+        List<Directory> batch = new ArrayList<>(wave);
+        List<Future<Listing>> listings = new ArrayList<>(wave);
+        walk:
         while (!pending.isEmpty()) {
             if (progress.isCancelled()) { out.cancelled=true; break; }
-            Directory directory = pending.removeLast();
-            try {
-                if (Files.isSymbolicLink(directory.file.toPath())) continue;
-                String canonical = directory.file.getCanonicalPath();
-                if (!underRoot(directory.root, directory.file)) continue;
-                if (!visitedDirs.add(canonical)) continue;
-                if (directory.depth > MAX_DEPTH || forbidden(canonical) || progress.exclude(directory.file)) continue;
-                File[] children = directory.file.listFiles();
-                if (children == null) { out.inaccessibleDirectories++; continue; }
-                if (children.length == 0 && directory.depth >= 1 && empty.size() < MAX_RESULTS) {
-                    empty.add(new Candidate(directory.file, directory.root, 0L,
-                            directory.file.lastModified(), Type.EMPTY, false,
-                            "Boş klasör; yalnızca seçersen silinir", null, null));
+            batch.clear(); listings.clear();
+            while (!pending.isEmpty() && batch.size() < wave) {
+                Directory d = pending.removeLast();
+                if (!visitedDirs.add(d.path)) continue;
+                if (d.depth > MAX_DEPTH || forbidden(d.path) || progress.exclude(d.file)) continue;
+                batch.add(d);
+            }
+            for (Directory d : batch) listings.add(pool.submit(() -> list(d, progress)));
+            for (int i = 0; i < batch.size(); i++) {
+                Directory directory = batch.get(i);
+                Listing listing;
+                try { listing = listings.get(i).get(); }
+                catch (InterruptedException e) { Thread.currentThread().interrupt(); out.cancelled=true; break walk; }
+                catch (ExecutionException e) { out.inaccessibleDirectories++; continue; }
+                if (progress.isCancelled()) { out.cancelled=true; break walk; }
+                if (listing.failed) { out.inaccessibleDirectories++; continue; }
+                if (listing.empty) {
+                    if (directory.depth >= 1 && empty.size() < MAX_RESULTS)
+                        empty.add(new Candidate(directory.file, directory.root, 0L, listing.modified, Type.EMPTY, false,
+                                "Boş klasör; yalnızca seçersen silinir", null, null));
+                    continue;
                 }
-                for (File child : children) {
-                    if (progress.isCancelled()) { out.cancelled = true; break; }
-                    if (out.visitedFiles >= MAX_VISITS) { out.limited=true; break; }
-                    if (Files.isSymbolicLink(child.toPath())) continue;
-                    if (child.isDirectory()) {
-                        if (!forbidden(child.getAbsolutePath())) pending.add(new Directory(child, directory.root, directory.depth+1));
-                    } else if (child.isFile()) {
-                        if (forbidden(child.getAbsolutePath()) || progress.exclude(child)) continue;
-                        Snapshot s = new Snapshot(child, directory.root);
+                for (Entry child : listing.entries) {
+                    if (out.visitedFiles >= MAX_VISITS) { out.limited=true; break walk; }
+                    if (child.directory) {
+                        if (!forbidden(child.file.getAbsolutePath()))
+                            pending.add(new Directory(child.file, directory.root,
+                                    directory.path + File.separator + child.file.getName(), directory.depth+1));
+                    } else {
+                        if (forbidden(child.file.getAbsolutePath()) || progress.exclude(child.file)) continue;
+                        Snapshot s = new Snapshot(child.file, directory.root, child.size, child.modified);
                         ordinary.add(s);
                         out.visitedFiles++;
                         out.visitedBytes += s.size;
-                        String folder = folderGroup(directory.root, child);
+                        String folder = folderGroup(directory.root, child.file);
                         if (folder != null) out.folderBytes.merge(folder, s.size, Long::sum);
                         if (s.size >= 1024L) lengths.computeIfAbsent(s.size, k -> new ArrayList<>()).add(s);
-                        if (out.visitedFiles % 300 == 0) progress.onUpdate(out.visitedFiles, child.getParent());
+                        if (out.visitedFiles % 300 == 0) progress.onUpdate(out.visitedFiles, child.file.getParent());
                     }
                 }
-                if (out.cancelled || out.limited) break;
-            } catch (SecurityException | IOException ignored) {
-                out.inaccessibleDirectories++;
             }
         }
         if (out.cancelled) return out;
         progress.onUpdate(out.visitedFiles, "Birebir aynı dosyalar kontrol ediliyor");
 
         // Fast sample first, full SHA-256 only for files with matching sizes and samples.
-        Set<String> duplicatePaths = new HashSet<>();
-        Set<String> preservedOriginals = new HashSet<>();
+        // Both hashing passes run in parallel; grouping is done afterwards in the same order as before.
+        Map<Snapshot, Future<String>> sampleJobs = new HashMap<>();
+        for (List<Snapshot> sizeGroup : lengths.values()) {
+            if (sizeGroup.size() < 2) continue;
+            for (Snapshot s : sizeGroup) sampleJobs.put(s, pool.submit(() -> sampleHash(s.file, progress)));
+        }
+        Map<Snapshot, Future<String>> fullJobs = new HashMap<>();
+        List<Map<String, List<Snapshot>>> sampleGroupsBySize = new ArrayList<>();
         for (List<Snapshot> sizeGroup : lengths.values()) {
             if (progress.isCancelled()) { out.cancelled = true; return out; }
             if (sizeGroup.size() < 2) continue;
             Map<String, List<Snapshot>> samples = new HashMap<>();
             for (Snapshot s : sizeGroup) {
+                String sample = result(sampleJobs.get(s));
                 if (progress.isCancelled()) { out.cancelled=true; return out; }
-                try {
-                    String sample = sampleHash(s.file, progress);
-                    samples.computeIfAbsent(sample, k -> new ArrayList<>()).add(s);
-                } catch (IOException | SecurityException ignored) { /* changed or unreadable */ }
+                if (sample != null) samples.computeIfAbsent(sample, k -> new ArrayList<>()).add(s);
             }
+            for (List<Snapshot> sampleGroup : samples.values())
+                if (sampleGroup.size() >= 2)
+                    for (Snapshot s : sampleGroup) fullJobs.put(s, pool.submit(() -> sha256(s.file, progress)));
+            sampleGroupsBySize.add(samples);
+        }
+        Set<String> duplicatePaths = new HashSet<>();
+        Set<String> preservedOriginals = new HashSet<>();
+        for (Map<String, List<Snapshot>> samples : sampleGroupsBySize) {
             for (List<Snapshot> sampleGroup : samples.values()) {
                 if (sampleGroup.size() < 2) continue;
                 Map<String, List<Snapshot>> hashes = new HashMap<>();
                 for (Snapshot s : sampleGroup) {
+                    String hash = result(fullJobs.get(s));
                     if (progress.isCancelled()) { out.cancelled=true; return out; }
-                    try {
-                        String hash = sha256(s.file, progress);
-                        if (s.file.length() == s.size && s.file.lastModified() == s.modified)
-                            hashes.computeIfAbsent(hash, k -> new ArrayList<>()).add(s);
-                    } catch (IOException | SecurityException ignored) { }
+                    if (hash != null && s.file.length() == s.size && s.file.lastModified() == s.modified)
+                        hashes.computeIfAbsent(hash, k -> new ArrayList<>()).add(s);
                 }
                 for (Map.Entry<String,List<Snapshot>> group : hashes.entrySet()) {
                     List<Snapshot> same = group.getValue();
@@ -226,6 +299,14 @@ public final class SafeScanner {
         for (Candidate c : out.candidates) if (c.suggested) out.suggestedBytes += c.size;
         progress.onUpdate(out.visitedFiles,"Tarama tamamlandı");
         return out;
+    }
+
+    /** Future result, or null when the file changed, was unreadable or the scan was cancelled. */
+    private static String result(Future<String> f) {
+        if (f == null) return null;
+        try { return f.get(); }
+        catch (InterruptedException e) { Thread.currentThread().interrupt(); return null; }
+        catch (ExecutionException | java.util.concurrent.CancellationException e) { return null; }
     }
 
     private static Candidate classify(Snapshot s, long now) {
