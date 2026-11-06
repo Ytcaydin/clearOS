@@ -8,6 +8,9 @@ import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
+import java.util.HashMap;
+import java.nio.file.FileSystemException;
 import java.util.Properties;
 import java.util.UUID;
 
@@ -112,7 +115,29 @@ public final class TrashStore {
         return false;
     }
     public synchronized boolean restore(Entry e) {
-        if (!known(e) || e.original.exists() || !e.payload.isFile()) return false;
+        if (!known(e)) return false;
+        return restoreVerified(e);
+    }
+    /**
+     * Batch restore from ONE verified index snapshot. restore() re-reads every metadata file per
+     * call, which is O(N²) over FUSE for a large quarantine (456 entries ≈ 200k reads).
+     * Returns the ids that were restored.
+     */
+    public synchronized java.util.Set<String> restoreBatch(List<Entry> requested) {
+        Map<String,Entry> current=new HashMap<>();
+        for (Entry item:list()) current.put(item.id,item);
+        java.util.Set<String> restored=new java.util.HashSet<>();
+        for (Entry supplied:requested) {
+            if (supplied==null) continue;
+            Entry e=current.get(supplied.id);
+            if (e==null || !e.original.equals(supplied.original) || !e.payload.equals(supplied.payload)) continue;
+            current.remove(e.id); // consume only on a verified match; duplicates then no-op
+            if (restoreVerified(e)) restored.add(e.id);
+        }
+        return restored;
+    }
+    private boolean restoreVerified(Entry e) {
+        if (e.original.exists() || !e.payload.isFile()) return false;
         File folder=e.original.getParentFile();
         // Don't recreate unknown directories; only restore to the original existing parent.
         if (folder==null || !folder.isDirectory()) return false;
@@ -120,11 +145,58 @@ public final class TrashStore {
         new File(index,e.id+".properties").delete();
         return true;
     }
+    /** Detailed result so a failed disk deletion is never reported as a success. */
+    public static final class PurgeResult {
+        public final Entry entry;
+        public final boolean deleted;
+        public final String reason;
+        public PurgeResult(Entry e,boolean ok,String reason) {
+            entry=e;deleted=ok;this.reason=reason;
+        }
+    }
+
+    /** One verified snapshot, avoiding hundreds of repeated O(N) metadata reads. */
+    public synchronized List<PurgeResult> purgeBatch(List<Entry> requested) {
+        Map<String,Entry> current=new HashMap<>();
+        for (Entry item:list()) current.put(item.id,item);
+        List<PurgeResult> outcomes=new ArrayList<>();
+        for (Entry supplied:requested) {
+            Entry e=supplied==null?null:current.remove(supplied.id);
+            if (e==null || supplied==null || !e.original.equals(supplied.original)
+                    || !e.payload.equals(supplied.payload) || e.size!=supplied.size) {
+                outcomes.add(new PurgeResult(supplied,false,"Karantina kaydı bulunamadı veya değişti"));
+                continue;
+            }
+            try {
+                if (!e.payload.isFile() || Files.isSymbolicLink(e.payload.toPath())
+                        || e.payload.length()!=e.size) {
+                    outcomes.add(new PurgeResult(e,false,"Dosya yok, değişmiş veya boyutu uyuşmuyor"));
+                    continue;
+                }
+                // A regular file is all we will delete. Never follow an external symlink.
+                Files.delete(e.payload.toPath());
+                if (Files.exists(e.payload.toPath())) {
+                    outcomes.add(new PurgeResult(e,false,"Dosya silme sonrası hâlâ mevcut"));
+                    continue;
+                }
+                // Metadata deletion is best effort: it is filtered from list() if payload is gone.
+                try {Files.deleteIfExists(new File(index,e.id+".properties").toPath());}
+                catch (IOException | SecurityException ignored) { }
+                outcomes.add(new PurgeResult(e,true,"Dosya diskten silindi"));
+            } catch (FileSystemException ex) {
+                String detail=ex.getReason()==null?"Depolama erişimi reddedildi veya dosya meşgul":ex.getReason();
+                outcomes.add(new PurgeResult(e,false,detail));
+            } catch (IOException | SecurityException ex) {
+                outcomes.add(new PurgeResult(e,false,ex.getClass().getSimpleName()+": "+
+                        (ex.getMessage()==null?"Erişim hatası":ex.getMessage())));
+            }
+        }
+        return outcomes;
+    }
+
     public synchronized boolean purge(Entry e) {
-        if (!known(e) || !e.payload.isFile() || e.payload.length()!=e.size) return false;
-        if (!e.payload.delete()) return false;
-        new File(index,e.id+".properties").delete();
-        return true;
+        List<PurgeResult> result=purgeBatch(Collections.singletonList(e));
+        return !result.isEmpty() && result.get(0).deleted;
     }
     public long containedBytes() {
         long size=0; for (Entry e:list()) size+=e.size; return size;

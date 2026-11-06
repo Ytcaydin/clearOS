@@ -25,6 +25,7 @@ public final class MessengerInspector {
         public long total;
         public final Map<String,Long> byType=new HashMap<>();
         public final List<Item> large=new ArrayList<>();
+        public final List<Item> photoPreviews=new ArrayList<>();
         public int count;
     }
     private MessengerInspector() { }
@@ -54,6 +55,8 @@ public final class MessengerInspector {
                     result.count++;result.total+=entry.length();
                     result.byType.merge(kind,entry.length(),Long::sum);
                     if(entry.length()>=8*SafeScanner.MIB)result.large.add(new Item(entry,kind));
+                    if(kind.equals("Fotoğraf") && entry.length()>100*1024 &&
+                            result.photoPreviews.size()<24)result.photoPreviews.add(new Item(entry,kind));
                 }
             }catch(Exception ignored){}
         }

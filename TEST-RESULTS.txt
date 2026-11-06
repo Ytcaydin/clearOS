@@ -1,15 +1,21 @@
-ClearOS Ultra 3.1.0 — Offline Verification
+ClearOS Ultra v4.0.0 | verification record
 Date: 2026-11-06
 
-PASS: ScannerSelfTest — SHA-256 duplicates, preservation priority, forbidden paths, stale-file refusal
-PASS: UltraCoreSelfTest — quarantine, restore collision, purge, forged entry rejection, storage map, dHash
-PASS: QuarantineRegressionTest — two storage roots, per-volume vault path, .nomedia, recovery and purge, vault excluded from scan, immutable exclude rules
-PASS: JavaSyntaxCheck — 18 Android Java source files parsed by Java compiler parser (syntax only; not linked against Android SDK)
-PASS: Manifest, launcher icon and notification icon XML syntax (3 files)
-PASS: CircleCI config YAML parsed
-PASS: gradlew Bash script syntax
+JVM tests (OpenJDK 21, local):
+PASS ScannerSelfTest: categories, exact duplicates, protected roots, changed file detection.
+PASS UltraCoreSelfTest: V3 vault, restore collision, purge and exclusions.
+PASS QuarantineRegressionTest: two volume vault layout, restore and delete, .nomedia, scan exclusions.
+PASS BatchPurgeSelfTest: verified batch deletion, second deletion rejection, forged entry refusal, restore preserved.
+PASS JavaSyntaxCheck: all Android Java files parsed as syntactically valid; NOT SDK symbol/type linking.
 
-NOT RUN: Android Gradle assembleDebug (Android SDK, Gradle wrapper JAR, external Maven downloads unavailable here)
-NOT RUN: Physical Android 11–16 install and permissions, cross-FUSE rename behavior, USB/SD card behavior, Notification runtime permission flow, Shizuku handshake, Media3 codec/transcode
+Additional static checks: Android manifest / resource XML, CircleCI & GitHub workflow YAML, shell syntax (see verification script output).
 
-Do not present this ZIP as a verified APK, or source syntax checks as proof of Android compilation. A live CircleCI run is required.
+NOT TESTED:
+- Android Gradle Plugin compilation and full APK artifact.
+- Any emulator/real phone install or UI rendering; Android 15/16 edge-to-edge.
+- Real primary/SD FUSE permanent delete after V4 changes.
+- Shizuku/Porter service binding and cache commands.
+- Media3 video codec and photo/media UI on the phone.
+- Signed in-place upgrade from the user's installed V3.1 APK.
+
+The user has confirmed that V3.1 scans and quarantine moves ran on their own phone; that does not certify V4 or permanent deletion.

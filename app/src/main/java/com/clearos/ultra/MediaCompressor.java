@@ -82,7 +82,9 @@ public final class MediaCompressor {
         }
         try {
             Uri saved=save(context,cache,"image/jpeg","Pictures/ClearOS Ultra","clearos_"+System.currentTimeMillis()+".jpg",false);
-            return "Yeni JPEG kaydedildi: "+saved+"\nKaynak korundu. Boyut: "+cache.length()+" bayt";
+            return "Yeni JPEG kaydedildi: "+saved+"\nOrijinal korundu.\n"+
+                    "Önce: "+ModernUi.bytes(previous)+" · Sonra: "+ModernUi.bytes(cache.length())+
+                    (previous>0?" · Tasarruf: "+Math.max(0,(100L*(previous-cache.length())/previous))+"%":"");
         } finally {cache.delete();}
     }
     public static void compressVideo(Context context,Uri uri,Listener listener) {
@@ -142,7 +144,9 @@ public final class MediaCompressor {
                                 }
                                 Uri saved=save(context,output,"video/mp4","Movies/ClearOS Ultra",
                                         "clearos_video_"+System.currentTimeMillis()+".mp4",true);
-                                listener.success("Yeni video: "+saved+"\nYeni boyut: "+output.length()+" bayt. Kaynak korundu.");
+                                listener.success("Yeni video: "+saved+"\nOrijinal korundu.\n"+
+                                        "Önce: "+ModernUi.bytes(previous)+" · Sonra: "+ModernUi.bytes(output.length())+
+                                        (previous>0?" · Tasarruf: "+Math.max(0,(100L*(previous-output.length())/previous))+"%":""));
                             }catch(Exception e){listener.error("Kayıt başarısız: "+e.getMessage());}
                             finally{output.delete();}
                         }

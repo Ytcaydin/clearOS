@@ -11,9 +11,12 @@
         android:label="ClearOS Ultra"
         android:icon="@drawable/ic_clearos_launcher"
         android:roundIcon="@drawable/ic_clearos_launcher"
-        android:theme="@android:style/Theme.Material.NoActionBar"
+        android:theme="@style/Theme.ClearOS"
         android:supportsRtl="true">
-        <activity android:name=".UltraFeaturesActivity" android:exported="false" />
+        <activity android:name=".QuarantineActivity" android:exported="false" />
+        <activity android:name=".MediaReviewActivity" android:exported="false" />
+        <activity android:name=".DeviceToolsActivity" android:exported="false" />
+        <activity android:name=".ActionLogActivity" android:exported="false" />
         <service android:name=".BackgroundScanService" android:permission="android.permission.BIND_JOB_SERVICE" android:exported="true" />
         <provider android:name="rikka.shizuku.ShizukuProvider"
             android:authorities="${applicationId}.shizuku"

@@ -5,6 +5,8 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
+import java.util.HashMap;
 
 /** A reversible vault on EACH source storage volume, rather than Android/data. */
 public final class QuarantineManager {
@@ -46,9 +48,49 @@ public final class QuarantineManager {
         return false;
     }
 
+    /** Restore many entries reading each volume's index once. Returns restored entry ids. */
+    public java.util.Set<String> restoreBatch(List<TrashStore.Entry> entries) {
+        java.util.Set<String> restored=new java.util.HashSet<>();
+        List<TrashStore.Entry> pending=new ArrayList<>(entries);
+        for (File root:roots) {
+            if (pending.isEmpty()) break;
+            java.util.Set<String> done=store(root).restoreBatch(pending);
+            restored.addAll(done);
+            pending.removeIf(e->e==null||done.contains(e.id));
+        }
+        return restored;
+    }
+
     public boolean purge(TrashStore.Entry entry) {
         for (File root:roots) if (store(root).purge(entry)) return true;
         return false;
+    }
+
+    /** Group by volume; each volume is indexed only once for a batch. */
+    public List<TrashStore.PurgeResult> purgeBatch(List<TrashStore.Entry> entries) {
+        Map<File,List<TrashStore.Entry>> perVolume=new HashMap<>();
+        for (TrashStore.Entry entry:entries) {
+            boolean accepted=false;
+            for(File root:roots) {
+                try {
+                    File folder=new File(root,FOLDER).getCanonicalFile();
+                    if(entry!=null && entry.payload.getCanonicalPath().startsWith(
+                            new File(folder,"items").getCanonicalPath()+File.separator)) {
+                        perVolume.computeIfAbsent(root,k->new ArrayList<>()).add(entry);
+                        accepted=true;break;
+                    }
+                } catch(IOException ignored) { }
+            }
+            if(!accepted)perVolume.computeIfAbsent(null,k->new ArrayList<>()).add(entry);
+        }
+        ArrayList<TrashStore.PurgeResult> results=new ArrayList<>();
+        for(Map.Entry<File,List<TrashStore.Entry>> volume:perVolume.entrySet()) {
+            if(volume.getKey()==null) {
+                for(TrashStore.Entry e:volume.getValue())
+                    results.add(new TrashStore.PurgeResult(e,false,"Karantina birimi bağlı değil"));
+            } else results.addAll(store(volume.getKey()).purgeBatch(volume.getValue()));
+        }
+        return results;
     }
 
     public long containedBytes() { long sum=0;for(TrashStore.Entry e:list())sum+=e.size;return sum; }

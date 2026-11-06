@@ -2,477 +2,374 @@ package com.clearos.ultra;
 
 import android.app.Activity;
 import android.app.AlertDialog;
-import android.content.ActivityNotFoundException;
 import android.content.Intent;
-import android.graphics.Color;
 import android.graphics.Insets;
-import android.graphics.Typeface;
-import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Environment;
 import android.os.StatFs;
 import android.os.storage.StorageManager;
-import android.os.storage.StorageVolume;
 import android.provider.Settings;
 import android.view.Gravity;
 import android.view.View;
 import android.view.WindowInsets;
-import android.view.ViewGroup;
-import android.widget.BaseAdapter;
-import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.HorizontalScrollView;
 import android.widget.LinearLayout;
-import android.widget.ListView;
-import android.widget.ProgressBar;
+import android.widget.ScrollView;
 import android.widget.TextView;
-
 import java.io.File;
 import java.io.IOException;
 import java.text.DateFormat;
 import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-/** Native Android UI, no ads, analytics, internet, root or third-party libraries. */
-public class MainActivity extends Activity {
-    private static final int BG = 0xFF09111D;
-    private static final int CARD = 0xFF152436;
-    private static final int FG = 0xFFEAF5FF;
-    private static final int MUTED = 0xFFA9B8C8;
-    private static final int ACCENT = 0xFF36D9BC;
-    private static final int ORANGE = 0xFFFFC178;
-    private static final int DANGER = 0xFFFF6B78;
+/** V4 main experience: a real tabbed dashboard, controlled review and offline scans. */
+public final class MainActivity extends Activity {
+    private final ExecutorService io=Executors.newSingleThreadExecutor();
+    private final AtomicBoolean cancel=new AtomicBoolean(false);
+    private final Set<String> picked=new HashSet<>();
+    private List<SafeScanner.Candidate> candidates=new ArrayList<>();
+    private SafeScanner.Type filter=null;
+    private int tab=0, pageSize=70, generation=0;
+    private boolean scanning=false;
+    private long scanned=0;
+    private String progress="Hazır";
+    private LinearLayout root, content, navigation;
+    private ScrollView scroll;
+    private TextView title;
 
-    private final ExecutorService io = Executors.newSingleThreadExecutor();
-    private final AtomicBoolean cancel = new AtomicBoolean(false);
-    private final Set<String> selected = new HashSet<>();
-    private final ArrayList<SafeScanner.Candidate> filtered = new ArrayList<>();
-    private List<SafeScanner.Candidate> results = new ArrayList<>();
-    private SafeScanner.Type chosen = null;
-    private boolean working = false;
-    private int jobId = 0;
+    // Quarantine size is read from shared storage (one metadata file per entry over FUSE), so it is
+    // computed off the UI thread and cached; home() only displays the last known value.
+    private final ExecutorService stats=Executors.newSingleThreadExecutor();
+    private volatile long quarantinedBytes=-1;
+    private final AtomicBoolean statsRunning=new AtomicBoolean(false);
 
-    private LinearLayout categoryRow;
-    private TextView capacity, storageBarLabel, stats, status, selection;
-    private ProgressBar capacityBar, busyBar;
-    private Button permissionButton, scanButton, recommendedButton, deleteButton, clearSelectionButton, cacheButton;
-    private ListView list;
-    private ResultAdapter adapter;
+    @Override public void onCreate(Bundle state) {super.onCreate(state); buildShell();render();}
+    @Override public void onResume() {super.onResume();if(root!=null){render();refreshQuarantineStats();}}
+    @Override public void onDestroy() {cancel.set(true);generation++;io.shutdownNow();stats.shutdownNow();super.onDestroy();}
 
-    @Override public void onCreate(Bundle savedInstanceState) {
-        super.onCreate(savedInstanceState);
-        renderUi();
-        updateStorage();
-        updatePermission();
+    private void refreshQuarantineStats() {
+        if(!statsRunning.compareAndSet(false,true))return;
+        try {
+            stats.execute(()->{
+                long bytes;
+                try{bytes=new QuarantineManager(StorageRoots.available(this)).containedBytes();}
+                catch(Exception e){bytes=-1;}
+                long value=bytes;
+                runOnUiThread(()->{statsRunning.set(false);if(isDestroyed())return;
+                    boolean changed=value!=quarantinedBytes;quarantinedBytes=value;
+                    if(changed&&tab==0)render();});
+            });
+        } catch(java.util.concurrent.RejectedExecutionException e){statsRunning.set(false);}
     }
 
-    @Override public void onResume() {
-        super.onResume();
-        if (permissionButton != null) updatePermission();
-    }
-
-    @Override protected void onDestroy() {
-        cancel.set(true); jobId++;
-        io.shutdownNow();
-        super.onDestroy();
-    }
-
-    private GradientDrawable background(int color, float radiusDp) {
-        GradientDrawable d = new GradientDrawable();
-        d.setColor(color);
-        d.setCornerRadius(dp(radiusDp));
-        return d;
-    }
-
-    private int dp(float value) { return (int)(getResources().getDisplayMetrics().density * value + .5f); }
-
-    private TextView txt(String text, int sp, int color, boolean bold) {
-        TextView v = new TextView(this);
-        v.setText(text); v.setTextSize(sp); v.setTextColor(color);
-        v.setTypeface(Typeface.DEFAULT, bold ? Typeface.BOLD : Typeface.NORMAL);
-        return v;
-    }
-
-    private LinearLayout vertical() {
-        LinearLayout v = new LinearLayout(this);
-        v.setOrientation(LinearLayout.VERTICAL);
-        return v;
-    }
-
-    private Button button(String caption, int color) {
-        Button b = new Button(this);
-        b.setText(caption); b.setAllCaps(false);
-        b.setTextColor(color == ACCENT ? BG : FG);
-        b.setTextSize(12); b.setTypeface(Typeface.DEFAULT,Typeface.BOLD);
-        b.setPadding(dp(7),dp(2),dp(7),dp(2));
-        b.setBackground(background(color,12));
-        return b;
-    }
-
-    private LinearLayout.LayoutParams lp(int width, int height, int top) {
-        LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(width, height);
-        p.topMargin=dp(top); return p;
-    }
-
-    private void renderUi() {
-        LinearLayout root = vertical();
-        root.setBackgroundColor(BG);
-        root.setPadding(dp(16),dp(12),dp(16),dp(8));
-        root.setOnApplyWindowInsetsListener((v,insets) -> {
-            Insets bars=insets.getInsets(WindowInsets.Type.systemBars());
-            root.setPadding(dp(16)+bars.left,dp(12)+bars.top,dp(16)+bars.right,dp(8)+bars.bottom);
-            return insets;
+    private void buildShell() {
+        root=ModernUi.column(this);root.setBackgroundColor(ModernUi.BG);
+        root.setOnApplyWindowInsetsListener((v,in)->{
+            Insets bars=in.getInsets(WindowInsets.Type.systemBars());
+            root.setPadding(bars.left,bars.top,bars.right,bars.bottom);return in;
         });
         setContentView(root);
-
-        TextView title = txt("CLEAROS  ULTRA",23,FG,true);
-        root.addView(title);
-        TextView subtitle = txt("v3.1 • Güvenli tarama • %100 çevrimdışı",11,MUTED,false);
-        root.addView(subtitle,lp(-1,-2,2));
-
-        LinearLayout disk = vertical(); disk.setPadding(dp(14),dp(12),dp(14),dp(12));
-        disk.setBackground(background(CARD,16)); root.addView(disk,lp(-1,-2,14));
-        capacity=txt("Depolama alanı",19,FG,true); disk.addView(capacity);
-        storageBarLabel=txt("",12,MUTED,false); disk.addView(storageBarLabel,lp(-1,-2,4));
-        capacityBar = new ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal);
-        capacityBar.setMax(1000); capacityBar.setProgressTintList(android.content.res.ColorStateList.valueOf(ACCENT));
-        capacityBar.setProgressBackgroundTintList(android.content.res.ColorStateList.valueOf(0xFF304257));
-        disk.addView(capacityBar,lp(-1,dp(9),10));
-
-        LinearLayout first = new LinearLayout(this); first.setOrientation(LinearLayout.HORIZONTAL);
-        root.addView(first,lp(-1,dp(44),12));
-        permissionButton=button("Dosya erişimi",CARD);
-        first.addView(permissionButton,new LinearLayout.LayoutParams(0,-1,1));
-        scanButton=button("Taramayı başlat",ACCENT);
-        LinearLayout.LayoutParams space=new LinearLayout.LayoutParams(0,-1,1.4f); space.leftMargin=dp(8);
-        first.addView(scanButton,space);
-        permissionButton.setOnClickListener(v -> requestAllFiles());
-        scanButton.setOnClickListener(v -> { if (working) cancelScan(); else beginScan(); });
-
-        LinearLayout second = new LinearLayout(this); second.setOrientation(LinearLayout.HORIZONTAL);
-        root.addView(second,lp(-1,dp(37),8));
-        cacheButton=button("Sistem önbelleği",CARD);
-        second.addView(cacheButton,new LinearLayout.LayoutParams(0,-1,1));
-        Button appSettings=button("Ultra 3.1 araçlar",CARD);
-        LinearLayout.LayoutParams settingsParams=new LinearLayout.LayoutParams(0,-1,1);
-        settingsParams.leftMargin=dp(8); second.addView(appSettings,settingsParams);
-        cacheButton.setOnClickListener(v -> clearSystemCache());
-        appSettings.setOnClickListener(v -> startActivity(new Intent(this,UltraFeaturesActivity.class)));
-
-        status=txt("Erişim verip taramayı başlat.",12,MUTED,false);
-        root.addView(status,lp(-1,-2,10));
-        busyBar = new ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal);
-        busyBar.setIndeterminate(true); busyBar.setVisibility(View.GONE);
-        root.addView(busyBar,lp(-1,dp(4),5));
-        stats=txt("Dosyalar incelenmedi",13,FG,true); root.addView(stats,lp(-1,-2,12));
-
-        HorizontalScrollView chipScroller = new HorizontalScrollView(this);
-        chipScroller.setHorizontalScrollBarEnabled(false);
-        categoryRow = new LinearLayout(this); categoryRow.setOrientation(LinearLayout.HORIZONTAL);
-        chipScroller.addView(categoryRow);
-        root.addView(chipScroller,lp(-1,dp(43),8));
-        drawChips();
-
-        LinearLayout action = new LinearLayout(this); action.setOrientation(LinearLayout.HORIZONTAL);
-        root.addView(action,lp(-1,dp(41),8));
-        recommendedButton=button("Önerileri seç",CARD); action.addView(recommendedButton,new LinearLayout.LayoutParams(0,-1,1));
-        clearSelectionButton=button("Seçimi kaldır",CARD);
-        LinearLayout.LayoutParams clearP=new LinearLayout.LayoutParams(0,-1,1); clearP.leftMargin=dp(6);
-        action.addView(clearSelectionButton,clearP);
-        deleteButton=button("KARANTİNA",DANGER);
-        LinearLayout.LayoutParams delP=new LinearLayout.LayoutParams(0,-1,.58f); delP.leftMargin=dp(6);
-        action.addView(deleteButton,delP);
-        recommendedButton.setOnClickListener(v -> {
-            for (SafeScanner.Candidate c : results) if (c.suggested) selected.add(c.key());
-            updateSelection(); adapter.notifyDataSetChanged();
-        });
-        clearSelectionButton.setOnClickListener(v -> {
-            selected.clear(); updateSelection(); adapter.notifyDataSetChanged();
-        });
-        deleteButton.setOnClickListener(v -> confirmQuarantine());
-
-        selection=txt("0 dosya seçili",12,ORANGE,true);
-        root.addView(selection,lp(-1,-2,7));
-
-        list = new ListView(this);
-        list.setDividerHeight(dp(5)); list.setDivider(null);
-        list.setCacheColorHint(Color.TRANSPARENT);
-        list.setSelector(android.R.color.transparent);
-        adapter = new ResultAdapter(); list.setAdapter(adapter);
-        root.addView(list,new LinearLayout.LayoutParams(-1,0,1));
-        list.setOnItemClickListener((parent,view,position,id) -> toggleItem(filtered.get(position)));
-
-        TextView footer=txt("Geri alınabilir karantina yer açmaz • Kalıcı silme: Ultra araçlar",10,MUTED,false);
-        footer.setGravity(Gravity.CENTER); root.addView(footer,lp(-1,-2,7));
-        updateSelection();
+        LinearLayout header=ModernUi.column(this);
+        header.setPadding(ModernUi.dp(this,21),ModernUi.dp(this,19),ModernUi.dp(this,21),ModernUi.dp(this,14));
+        title=ModernUi.text(this,"ClearOS Ultra",23,ModernUi.TEXT,true);header.addView(title);
+        header.addView(ModernUi.muted(this,"V4.0  ·  Çevrimdışı  ·  Güvenli temizlik",11),ModernUi.space(this,-1,-2,5));
+        root.addView(header);
+        scroll=new ScrollView(this);scroll.setFillViewport(false);scroll.setClipToPadding(false);
+        content=ModernUi.column(this);content.setPadding(ModernUi.dp(this,18),0,ModernUi.dp(this,18),ModernUi.dp(this,24));
+        scroll.addView(content);root.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
+        navigation=ModernUi.row(this);navigation.setBackgroundColor(ModernUi.PANEL);
+        navigation.setPadding(ModernUi.dp(this,5),ModernUi.dp(this,8),ModernUi.dp(this,5),ModernUi.dp(this,8));
+        root.addView(navigation);
     }
-
-    private void updateStorage() {
-        try {
-            StatFs stat = new StatFs(Environment.getExternalStorageDirectory().getAbsolutePath());
-            long total=stat.getTotalBytes(), free=stat.getAvailableBytes(), used=total-free;
-            capacity.setText("Kullanılan  " + size(used));
-            storageBarLabel.setText("Toplam " + size(total) + "    •    Boş " + size(free));
-            capacityBar.setProgress(total>0 ? (int)Math.min(1000,(used*1000.0)/total) : 0);
-        } catch (Exception e) { capacity.setText("Depolama okunamadı"); }
+    private void render() {
+        if(content==null)return;
+        int y=scroll.getScrollY();content.removeAllViews();
+        title.setText(new String[]{"ClearOS Ultra","Temizlik","Medya","Analiz","Araçlar"}[tab]);
+        if(tab==0)home();else if(tab==1)clean();else if(tab==2)media();else if(tab==3)analysis();else tools();
+        nav();scroll.post(()->scroll.scrollTo(0,y));
     }
-
-    private boolean permitted() { return Environment.isExternalStorageManager(); }
-
-    private void updatePermission() {
-        boolean enabled=permitted();
-        permissionButton.setText(enabled ? "✓ İzin verildi" : "Dosya izni ver");
-        if (!working && results.isEmpty())
-            status.setText(enabled ? "Hazır. Tüm paylaşılan depolamayı tara." : "Derin tarama için 'Tüm dosyalara erişim' iznini aç.");
-        cacheButton.setEnabled(enabled);
-        cacheButton.setAlpha(enabled ? 1f : .45f);
-    }
-
-    private void requestAllFiles() {
-        try {
-            Intent i = new Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
-                    Uri.parse("package:" + getPackageName()));
-            startActivity(i);
-        } catch (Exception e) {
-            openIntent(new Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION));
+    private void change(int n) {tab=n;pageSize=70;scroll.scrollTo(0,0);render();}
+    private void nav() {
+        navigation.removeAllViews();
+        String[] names={"Ana Sayfa","Temizlik","Medya","Analiz","Araçlar"};
+        for(int i=0;i<names.length;i++) {
+            final int to=i;boolean active=i==tab;
+            LinearLayout tile=ModernUi.column(this);tile.setGravity(Gravity.CENTER);
+            if(active)tile.setBackground(ModernUi.shape(this,ModernUi.PANEL2,14));
+            tile.addView(new ModernUi.NavIcon(this,i,active),new LinearLayout.LayoutParams(ModernUi.dp(this,27),ModernUi.dp(this,27)));
+            TextView label=ModernUi.text(this,names[i],10,active?ModernUi.TEAL:ModernUi.MUTED,active);
+            label.setGravity(Gravity.CENTER);tile.addView(label,ModernUi.space(this,-1,-2,4));
+            navigation.addView(tile,new LinearLayout.LayoutParams(0,ModernUi.dp(this,60),1));
+            tile.setOnClickListener(x->change(to));
         }
     }
-
-    private void openIntent(Intent intent) {
-        try { startActivity(intent); }
-        catch (Exception e) { show("Bu ayar telefonunda kullanılamıyor."); }
+    private void add(View v,int margin) {ModernUi.attach(content,v,this,margin);}
+    private void section(String heading,String sub,int top) {add(ModernUi.section(this,heading,sub),top);}
+    private long[] storage() {
+        try {StatFs stat=new StatFs(Environment.getExternalStorageDirectory().getAbsolutePath());
+            long total=stat.getTotalBytes(),free=stat.getAvailableBytes();return new long[]{total,total-free,free};}
+        catch(Exception e){return new long[]{0,0,0};}
     }
-
-    private void clearSystemCache() {
-        if (!permitted()) { requestAllFiles(); return; }
-        new AlertDialog.Builder(this)
-                .setTitle("Sistem önbelleğini temizle")
-                .setMessage("Android'in kendi onay ekranı açılır. Uygulamaların dış önbellekleri silinebilir ve sonradan tekrar oluşabilir. Pil/performans etkisi olabilir. Devam edilsin mi?")
-                .setNegativeButton("Vazgeç",null)
-                .setPositiveButton("Sistem ekranını aç",(d,w) -> {
-                    try {
-                        startActivityForResult(new Intent(StorageManager.ACTION_CLEAR_APP_CACHE),101);
-                    } catch (Exception ex) {
-                        show("Telefonun bu temizleme ekranını desteklemiyor. Depolama yönetimi açılıyor.");
-                        openIntent(new Intent(StorageManager.ACTION_MANAGE_STORAGE));
-                    }
+    private long suggested() {long bytes=0;for(SafeScanner.Candidate c:candidates)if(c.suggested)bytes+=c.size;return bytes;}
+    private long lastSuggested() {return getSharedPreferences("last_scan",0).getLong("suggested",0);}
+    private int lastFound() {return getSharedPreferences("last_scan",0).getInt("found",0);}
+    private void statBox(LinearLayout row,String number,String label,int accent) {
+        LinearLayout box=ModernUi.card(this);LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(0,-2,1);
+        if(row.getChildCount()>0)p.leftMargin=ModernUi.dp(this,9);
+        row.addView(box,p);box.addView(ModernUi.text(this,number,21,accent,true));
+        box.addView(ModernUi.muted(this,label,11),ModernUi.space(this,-1,-2,8));
+    }
+    private void home() {
+        long[] s=storage();long used=s[1],total=s[0];
+        LinearLayout disk=ModernUi.card(this);
+        disk.addView(ModernUi.muted(this,"DEPOLAMA GENEL BAKIŞ",11));
+        LinearLayout r=ModernUi.row(this);disk.addView(r,ModernUi.space(this,-1,-2,12));
+        float percent=total==0?0:used/(float)total;
+        r.addView(new ModernUi.Donut(this,percent,String.format(Locale.getDefault(),"%%%d",Math.round(percent*100))),
+                new LinearLayout.LayoutParams(ModernUi.dp(this,138),ModernUi.dp(this,138)));
+        LinearLayout details=ModernUi.column(this);LinearLayout.LayoutParams dp=new LinearLayout.LayoutParams(0,-2,1);
+        dp.leftMargin=ModernUi.dp(this,18);r.addView(details,dp);
+        details.addView(ModernUi.muted(this,"Kullanılan alan",11));
+        details.addView(ModernUi.text(this,ModernUi.bytes(used),23,ModernUi.TEXT,true),ModernUi.space(this,-1,-2,7));
+        details.addView(ModernUi.text(this,ModernUi.bytes(s[2])+" boş",14,ModernUi.TEAL,true),ModernUi.space(this,-1,-2,7));
+        details.addView(ModernUi.muted(this,"Toplam "+ModernUi.bytes(total),11),ModernUi.space(this,-1,-2,7));
+        add(disk,10);
+        LinearLayout counters=ModernUi.row(this);
+        statBox(counters,ModernUi.bytes(candidates.isEmpty()?lastSuggested():suggested()),"Tarama önerisi",ModernUi.AMBER);
+        statBox(counters,quarantinedBytes<0?"…":ModernUi.bytes(quarantinedBytes),"Karantinada",ModernUi.BLUE);
+        add(counters,10);
+        section("Akıllı temizlik",scanning?"Tarama devam ediyor":"Dosyaları incelemeden silmiyoruz",25);
+        LinearLayout scan=ModernUi.card(this);
+        scan.addView(ModernUi.text(this,scanning?"Tarama devam ediyor":"Telefonunu analiz et",17,ModernUi.TEXT,true));
+        scan.addView(ModernUi.muted(this,scanning?scanned+" dosya tarandı · "+progress:
+                "Kopyaları, eski APK'ları ve erişilebilir büyük dosyaları bul.",12),ModernUi.space(this,-1,-2,7));
+        android.widget.Button btn=ModernUi.button(this,scanning?"Taramayı durdur":"Akıllı taramayı başlat",true);
+        scan.addView(btn,ModernUi.space(this,-1,48,15));
+        btn.setOnClickListener(v->{if(scanning)cancel.set(true);else startScan();});add(scan,12);
+        section("Hızlı işlemler","Sık kullandığın araçlar",23);
+        add(ModernUi.actionCard(this,"♻","Karantina yönetimi", "Geri yükle, seçerek sil, hata raporu",
+                ()->startActivity(new Intent(this,QuarantineActivity.class))),12);
+        add(ModernUi.actionCard(this,"▤","Depolama analizi", "Klasör haritası ve geçmiş",()->change(3)),9);
+        add(ModernUi.actionCard(this,"▣","Medya optimizasyonu", "Benzer fotoğraf, video ve mesajlaşma",()->change(2)),9);
+        if(!candidates.isEmpty())add(ModernUi.actionCard(this,"✓",""+candidates.size()+" tarama sonucu",
+                "Sonuçları incele ve dosya seç",()->change(1)),9);
+    }
+    private boolean permitted() {return Environment.isExternalStorageManager();}
+    private void requestPermission() {
+        try {startActivity(new Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                Uri.parse("package:"+getPackageName())));}
+        catch(Exception e){startActivity(new Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION));}
+    }
+    private void startScan() {
+        if(scanning)return;
+        if(!permitted()) {new AlertDialog.Builder(this).setTitle("Dosya izni gerekli")
+                .setMessage("Paylaşılan depolamayı taramak için Tüm dosyalara erişim iznini açmalısın.")
+                .setPositiveButton("İzni aç",(d,w)->requestPermission()).setNegativeButton("Vazgeç",null).show();return;}
+        scanning=true;cancel.set(false);scanned=0;progress="Başlıyor";int job=++generation;
+        render();
+        android.content.SharedPreferences p=getSharedPreferences("excluded",0);
+        ExcludedPaths exclusions=new ExcludedPaths(p.getBoolean("DCIM",false),p.getBoolean("Documents",false),p.getBoolean("Download",false));
+        io.execute(()->{
+            SafeScanner.ScanResult result=SafeScanner.scan(StorageRoots.available(this),new SafeScanner.Progress() {
+                public boolean isCancelled(){return cancel.get()||Thread.currentThread().isInterrupted();}
+                public boolean exclude(File f){return exclusions.excludes(f);}
+                public void onUpdate(long count,String stage){
+                    runOnUiThread(()->{if(job!=generation)return;
+                        scanned=count;progress=stage==null?"Kontrol ediliyor":stage;
+                        if(tab==0 && count%1500==0)render();});
+                }
+            });
+            runOnUiThread(()->{
+                if(job!=generation||isDestroyed())return;scanning=false;
+                if(!result.cancelled){
+                    candidates=result.candidates;picked.clear();
+                    getSharedPreferences("last_scan",0).edit().putInt("found",candidates.size())
+                            .putLong("suggested",result.suggestedBytes).putLong("visited",result.visitedFiles)
+                            .putLong("when",System.currentTimeMillis()).apply();
+                    saveFolderMap(result.folderBytes);
+                    try{StorageHistory.record(this);}catch(Exception ignored){}
+                    tab=1;scroll.scrollTo(0,0);
+                } else progress="Tarama durduruldu";
+                render();
+                if(!result.cancelled && result.limited)dialog("Tarama sınırı","Güvenlik kaynak limitine ulaşıldı. Sonuçlar kısmi olabilir.");
+            });
+        });
+    }
+    private void saveFolderMap(Map<String,Long> folders) {
+        List<Map.Entry<String,Long>> top=new ArrayList<>(folders.entrySet());
+        top.sort((a,b)->Long.compare(b.getValue(),a.getValue()));
+        org.json.JSONArray arr=new org.json.JSONArray();
+        for(int i=0;i<Math.min(70,top.size());i++){
+            try {org.json.JSONObject obj=new org.json.JSONObject();obj.put("path",top.get(i).getKey());
+                obj.put("bytes",top.get(i).getValue());arr.put(obj);}catch(Exception ignored){}
+        }
+        getSharedPreferences("folder_map",0).edit().putString("json",arr.toString()).apply();
+    }
+    private void clean() {
+        section("Temizlik merkezi",candidates.isEmpty()?"Son tarama: "+lastFound()+" bulgu · Yeni tarama gerekli":
+                candidates.size()+" dosya bulundu · "+ModernUi.bytes(suggested())+" öneri",7);
+        LinearLayout actions=ModernUi.row(this);add(actions,12);
+        android.widget.Button scan=ModernUi.button(this,scanning?"Durdur":"Yeniden tara",true);
+        actions.addView(scan,new LinearLayout.LayoutParams(0,ModernUi.dp(this,46),1));
+        scan.setOnClickListener(v->{if(scanning)cancel.set(true);else startScan();});
+        if(!permitted())add(ModernUi.actionCard(this,"!","Dosya erişimi gerekli", "Tarama iznini aç",this::requestPermission),12);
+        if(candidates.isEmpty()){add(ModernUi.actionCard(this,"⌕","Sonuçları göster","Taramayla güncel ve doğrulanmış sonuçlar oluştur",this::startScan),14);return;}
+        HorizontalScrollView chips=new HorizontalScrollView(this);chips.setHorizontalScrollBarEnabled(false);
+        LinearLayout chipRow=ModernUi.row(this);chips.addView(chipRow);
+        String[] labels=new String[SafeScanner.Type.values().length+1];labels[0]="Tümü";
+        for(int i=0;i<SafeScanner.Type.values().length;i++)labels[i+1]=SafeScanner.Type.values()[i].label;
+        for(int i=0;i<labels.length;i++){
+            SafeScanner.Type t=i==0?null:SafeScanner.Type.values()[i-1];
+            TextView chip=ModernUi.badge(this,labels[i],filter==t?ModernUi.TEAL:ModernUi.MUTED);
+            chip.setPadding(ModernUi.dp(this,14),ModernUi.dp(this,10),ModernUi.dp(this,14),ModernUi.dp(this,10));
+            LinearLayout.LayoutParams cp=new LinearLayout.LayoutParams(-2,-2);cp.rightMargin=ModernUi.dp(this,8);
+            chipRow.addView(chip,cp);chip.setOnClickListener(v->{filter=t;pageSize=70;scroll.scrollTo(0,0);render();});
+        }
+        add(chips,17);
+        LinearLayout mini=ModernUi.row(this);
+        android.widget.Button suggest=ModernUi.button(this,"Güvenli önerileri seç",false);
+        mini.addView(suggest,new LinearLayout.LayoutParams(0,ModernUi.dp(this,42),1));
+        android.widget.Button clear=ModernUi.button(this,"Seçimi kaldır",false);
+        LinearLayout.LayoutParams cp=new LinearLayout.LayoutParams(0,ModernUi.dp(this,42),1);cp.leftMargin=ModernUi.dp(this,7);mini.addView(clear,cp);
+        suggest.setOnClickListener(v->{for(SafeScanner.Candidate c:candidates)if(c.suggested)picked.add(c.key());render();});
+        clear.setOnClickListener(v->{picked.clear();render();});add(mini,12);
+        long selectedSize=0;int count=0;
+        for(SafeScanner.Candidate c:candidates)if(picked.contains(c.key())){selectedSize+=c.size;count++;}
+        LinearLayout selection=ModernUi.card(this);
+        selection.addView(ModernUi.text(this,count+" seçili  ·  "+ModernUi.bytes(selectedSize),17,ModernUi.AMBER,true));
+        selection.addView(ModernUi.muted(this,"Karantinaya taşımak alan boşaltmaz. Kalıcı silme ayrı onay ister.",11),ModernUi.space(this,-1,-2,7));
+        android.widget.Button quarantine=ModernUi.button(this,"Seçilenleri karantinaya taşı",true);
+        quarantine.setEnabled(count>0&&!scanning);quarantine.setAlpha(count>0&&!scanning?1:.45f);
+        selection.addView(quarantine,ModernUi.space(this,-1,47,12));quarantine.setOnClickListener(v->confirmMove());
+        add(selection,12);
+        int shown=0;
+        for(SafeScanner.Candidate c:candidates) {
+            if(filter!=null&&c.type!=filter)continue;
+            if(shown++>=pageSize)break;
+            LinearLayout item=ModernUi.row(this);item.setPadding(ModernUi.dp(this,11),ModernUi.dp(this,12),ModernUi.dp(this,11),ModernUi.dp(this,12));
+            item.setBackground(ModernUi.outlined(this,ModernUi.PANEL,15));
+            CheckBox box=new CheckBox(this);box.setChecked(picked.contains(c.key()));
+            box.setButtonTintList(android.content.res.ColorStateList.valueOf(ModernUi.TEAL));
+            item.addView(box,new LinearLayout.LayoutParams(ModernUi.dp(this,43),ModernUi.dp(this,44)));
+            LinearLayout txt=ModernUi.column(this);item.addView(txt,new LinearLayout.LayoutParams(0,-2,1));
+            TextView name=ModernUi.text(this,c.file.getName(),13,ModernUi.TEXT,true);name.setSingleLine(true);
+            name.setEllipsize(android.text.TextUtils.TruncateAt.MIDDLE);txt.addView(name);
+            txt.addView(ModernUi.muted(this,c.type.label+" · "+ModernUi.bytes(c.size)+" · "+RiskEngine.risk(c).label,11),ModernUi.space(this,-1,-2,5));
+            TextView path=ModernUi.muted(this,c.file.getParent(),10);path.setSingleLine(true);path.setEllipsize(android.text.TextUtils.TruncateAt.MIDDLE);
+            txt.addView(path,ModernUi.space(this,-1,-2,4));
+            Runnable toggle=()->{if(!picked.add(c.key()))picked.remove(c.key());int y=scroll.getScrollY();render();scroll.post(()->scroll.scrollTo(0,y));};
+            box.setOnClickListener(v->toggle.run());item.setOnClickListener(v->toggle.run());add(item,7);
+        }
+        long totalShown=candidates.stream().filter(c->filter==null||c.type==filter).count();
+        if(totalShown>pageSize) {
+            android.widget.Button more=ModernUi.button(this,"Daha fazla göster ("+(totalShown-pageSize)+")",false);
+            add(more,10);more.setOnClickListener(v->{pageSize+=70;render();});
+        }
+    }
+    private void confirmMove() {
+        List<SafeScanner.Candidate> moving=new ArrayList<>();long bytes=0;
+        for(SafeScanner.Candidate c:candidates)if(picked.contains(c.key())){moving.add(c);bytes+=c.size;}
+        if(moving.isEmpty())return;
+        for(SafeScanner.Candidate c:moving)if(c.type==SafeScanner.Type.DUPLICATE&&c.duplicateKeep!=null
+                && picked.contains(c.duplicateKeep.getAbsolutePath())) {
+            dialog("Kopya koruması","Aynı içeriğin korunacak aslı da seçilmiş. En az bir kopyayı bırak.");return;
+        }
+        long total=bytes;
+        new AlertDialog.Builder(this).setTitle("Güvenli karantinaya taşı")
+                .setMessage(moving.size()+" dosya · "+ModernUi.bytes(total)+"\n\nDosyalar aynı depolama birimindeki gizli karantinaya taşınacak. Gerçek boş alan henüz artmaz.")
+                .setNegativeButton("Vazgeç",null).setPositiveButton("Taşı",(d,w)->{
+                    if(scanning)return;scanning=true;render();
+                    io.execute(()->{
+                        QuarantineManager manager=new QuarantineManager(StorageRoots.available(this));
+                        int ok=0;List<String> failure=new ArrayList<>();Set<String> moved=new HashSet<>();
+                        for(SafeScanner.Candidate c:moving){
+                            try {manager.move(c);ok++;moved.add(c.key());}
+                            catch(IOException|SecurityException ex){
+                                if(failure.size()<40)failure.add(c.file.getName()+": "+ex.getMessage());
+                            }
+                        }
+                        int success=ok;int failed=moving.size()-ok;
+                        runOnUiThread(()->{
+                            scanning=false;picked.removeAll(moved);candidates.removeIf(c->moved.contains(c.key()));render();
+                            refreshQuarantineStats();
+                            ActionLog.add(this,"Karantina",success+" taşındı, "+failed+" başarısız");
+                            new AlertDialog.Builder(this).setTitle("Karantina işlemi tamamlandı")
+                                    .setMessage(success+" taşındı · "+failed+" taşınamadı\n\n"+String.join("\n",failure))
+                                    .setPositiveButton("Karantinayı aç",(x,y)->startActivity(new Intent(this,QuarantineActivity.class)))
+                                    .setNegativeButton("Kapat",null).show();
+                        });
+                    });
                 }).show();
     }
-
-    private List<File> storageRoots() { return StorageRoots.available(this); }
-
-    private void beginScan() {
-        if (!permitted()) { requestAllFiles(); return; }
-        if (working) return;
-        results=new ArrayList<>(); selected.clear(); filtered.clear(); adapter.notifyDataSetChanged();
-        working=true; cancel.set(false); int myJob=++jobId;
-        scanButton.setText("Taramayı durdur"); busyBar.setVisibility(View.VISIBLE);
-        status.setText("Paylaşılan depolama taranıyor…"); updateSelection();
-        List<File> roots=storageRoots();
-        android.content.SharedPreferences p=getSharedPreferences("excluded",0);
-        ExcludedPaths exclusions=new ExcludedPaths(p.getBoolean("DCIM",false),
-                p.getBoolean("Documents",false),p.getBoolean("Download",false));
-        io.execute(() -> {
-            SafeScanner.ScanResult r=SafeScanner.scan(roots,new SafeScanner.Progress() {
-                @Override public boolean isCancelled() { return cancel.get() || Thread.currentThread().isInterrupted(); }
-                @Override public boolean exclude(File file) {return exclusions.excludes(file);}
-                @Override public void onUpdate(long count,String path) {
-                    runOnUiThread(() -> {
-                        if (jobId==myJob) status.setText(String.format(Locale.getDefault(),
-                                "%s dosya tarandı • %s",String.format(Locale.getDefault(),"%,d",count),path));
-                    });
-                }
-            });
-            runOnUiThread(() -> {
-                if (jobId!=myJob || isFinishing() || isDestroyed()) return;
-                working=false; scanButton.setText("Yeniden tara"); busyBar.setVisibility(View.GONE);
-                if (r.cancelled) {
-                    status.setText("Tarama durduruldu. Tam sonuç için yeniden tara.");
-                    return;
-                }
-                results=r.candidates;
-                try { StorageHistory.record(this); } catch(Exception ignored) { }
-                saveFolderMap(r.folderBytes);
-                stats.setText(String.format(Locale.getDefault(),"%,d dosya incelendi • %,d sonuç • %s öneri",
-                        r.visitedFiles,r.candidates.size(),size(r.suggestedBytes)));
-                status.setText((r.limited ? "Tarama güvenlik sınırına ulaştı. " : "Tarama tamamlandı. ")
-                        + (r.inaccessibleDirectories>0 ? r.inaccessibleDirectories+" klasöre erişilemedi." : "Dosyalar iznin olmadan silinmez."));
-                applyFilter(); updateStorage();
-            });
-        });
+    private void media() {
+        section("Medya merkezi","Fotoğraf ve videoların kontrolü sende",7);
+        add(ModernUi.actionCard(this,"▣","Benzer / bulanık fotoğraflar","Görüntü karşılaştırması · Otomatik silme yok",
+                ()->startActivity(new Intent(this,MediaReviewActivity.class).putExtra("section","photos"))),16);
+        add(ModernUi.actionCard(this,"▸","Fotoğraf ve video sıkıştırma","Orijinali koruyarak daha küçük kopya üret",
+                ()->startActivity(new Intent(this,MediaReviewActivity.class).putExtra("section","compress"))),9);
+        add(ModernUi.actionCard(this,"◉","WhatsApp ve Telegram medyası","Erişilebilir fotoğraf, video ve belgeler",
+                ()->startActivity(new Intent(this,MediaReviewActivity.class).putExtra("section","messenger"))),9);
     }
-
-    private void saveFolderMap(java.util.Map<String, Long> folders) {
-        ArrayList<java.util.Map.Entry<String, Long>> top=new ArrayList<>(folders.entrySet());
-        top.sort((a,b)->Long.compare(b.getValue(),a.getValue()));
-        StringBuilder readable=new StringBuilder();
-        org.json.JSONArray data=new org.json.JSONArray();
-        for(int i=0;i<Math.min(60,top.size());i++) {
-            java.util.Map.Entry<String, Long> folder=top.get(i);
-            try {
-                org.json.JSONObject entry=new org.json.JSONObject();
-                entry.put("path",folder.getKey());entry.put("bytes",folder.getValue());data.put(entry);
-            }catch(org.json.JSONException ignored) { }
-            if(i<20)readable.append(i+1).append(". ").append(folder.getKey())
-                    .append("  •  ").append(size(folder.getValue())).append("\n");
-        }
-        getSharedPreferences("folder_map",0).edit()
-                .putString("latest",readable.toString()).putString("json",data.toString()).apply();
-    }
-
-    private void cancelScan() { cancel.set(true); status.setText("Tarama durduruluyor…"); }
-
-    private void drawChips() {
-        categoryRow.removeAllViews();
-        addChip("Tümü",null);
-        for (SafeScanner.Type type : SafeScanner.Type.values()) addChip(type.label,type);
-    }
-
-    private void addChip(String caption,SafeScanner.Type type) {
-        boolean active = chosen==type;
-        TextView chip=txt(caption,11,active?BG:FG,active);
-        chip.setGravity(Gravity.CENTER); chip.setPadding(dp(12),0,dp(12),0);
-        chip.setBackground(background(active?ACCENT:CARD,13));
-        LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-2,dp(35)); p.rightMargin=dp(6);
-        categoryRow.addView(chip,p);
-        chip.setOnClickListener(v -> { chosen=type; drawChips(); applyFilter(); });
-    }
-
-    private void applyFilter() {
-        filtered.clear();
-        for (SafeScanner.Candidate c : results) if (chosen==null || chosen==c.type) filtered.add(c);
-        adapter.notifyDataSetChanged(); updateSelection();
-    }
-
-    private void toggleItem(SafeScanner.Candidate c) {
-        if (working) return;
-        if (!selected.add(c.key())) selected.remove(c.key());
-        updateSelection(); adapter.notifyDataSetChanged();
-    }
-
-    private void updateSelection() {
-        long bytes=0; int count=0;
-        for (SafeScanner.Candidate c : results) if (selected.contains(c.key())) { bytes+=c.size; count++; }
-        if (selection!=null) selection.setText(count + " seçili • " + size(bytes) + " karantinaya taşınabilir (yer açılmaz)");
-        if (deleteButton!=null) { deleteButton.setEnabled(count>0 && !working); deleteButton.setAlpha(count>0 && !working?1f:.45f); }
-    }
-
-    private void confirmQuarantine() {
-        if (working || selected.isEmpty()) return;
-        ArrayList<SafeScanner.Candidate> targets=new ArrayList<>();
-        long bytes=0;
-        for (SafeScanner.Candidate c:results) if (selected.contains(c.key())) { targets.add(c); bytes+=c.size; }
-        if (targets.isEmpty()) return;
-        // Never delete both the protected original and its duplicate in one operation.
-        for (SafeScanner.Candidate c : targets) {
-            if (c.type==SafeScanner.Type.DUPLICATE && c.duplicateKeep!=null
-                    && selected.contains(c.duplicateKeep.getAbsolutePath())) {
-                show("Birbirinin aynısı olan dosyaların hem kopyası hem korunacak aslı seçilmiş. "
-                        + "En az bir kopya bırakmak için korunan dosyanın seçimini kaldır.");
-                return;
+    private void analysis() {
+        section("Depolama analizi","Telefonunun depolama kullanımını keşfet",7);
+        long[] disk=storage();
+        LinearLayout counter=ModernUi.row(this);
+        statBox(counter,ModernUi.bytes(disk[1]),"Kullanılan",ModernUi.TEXT);
+        statBox(counter,ModernUi.bytes(disk[2]),"Boş",ModernUi.TEAL);add(counter,15);
+        section("Klasör haritası","Son taramada hesaplanan klasör büyüklükleri",25);
+        String json=getSharedPreferences("folder_map",0).getString("json","[]");
+        try {
+            org.json.JSONArray folders=new org.json.JSONArray(json);
+            if(folders.length()==0)add(ModernUi.muted(this,"Klasör haritası için önce tarama yap.",13),14);
+            long biggest=folders.length()>0?folders.getJSONObject(0).optLong("bytes",1):1;
+            for(int i=0;i<Math.min(folders.length(),25);i++){
+                org.json.JSONObject f=folders.optJSONObject(i);if(f==null)continue;
+                LinearLayout c=ModernUi.card(this);
+                TextView name=ModernUi.text(this,f.optString("path"),12,ModernUi.TEXT,true);
+                name.setSingleLine(true);name.setEllipsize(android.text.TextUtils.TruncateAt.MIDDLE);
+                c.addView(name);c.addView(ModernUi.muted(this,ModernUi.bytes(f.optLong("bytes")),11),ModernUi.space(this,-1,-2,6));
+                c.addView(ModernUi.progress(this,(int)(1000.0*f.optLong("bytes")/Math.max(1,biggest))),ModernUi.space(this,-1,7,10));add(c,8);
             }
+        }catch(Exception ex){add(ModernUi.muted(this,"Harita verisi okunamadı; yeniden tara.",12),12);}
+        section("Depolama geçmişi","Günlük yerel ölçümler · 365 güne kadar saklanır",24);
+        List<StorageHistory.Reading> history=StorageHistory.list(this);
+        if(history.size()<2)add(ModernUi.muted(this,"En az iki farklı gün için ölçüm gerekli.",12),12);
+        else{
+            LinearLayout card=ModernUi.card(this);
+            card.addView(new ModernUi.Trend(this,history),ModernUi.space(this,-1,165,3));
+            long delta=history.get(history.size()-1).used-history.get(0).used;
+            card.addView(ModernUi.text(this,(delta>=0?"+":"−")+ModernUi.bytes(Math.abs(delta)),25,
+                    delta>=0?ModernUi.AMBER:ModernUi.TEAL,true));
+            card.addView(ModernUi.muted(this,"İlk kayda göre kullanılan alan değişimi",11),ModernUi.space(this,-1,-2,7));
+            add(card,12);
         }
-        new AlertDialog.Builder(this)
-                .setTitle("Güvenli karantinaya taşı")
-                .setMessage(targets.size()+" öğe ("+size(bytes)+") uygulama karantinasına taşınacak."
-                        +"\n\nKarantina depolama alanını hemen boşaltmaz. Ultra araçlar üzerinden geri yükleyebilir veya ayrı onayla kalıcı silebilirsin."
-                        +"\n\nKarantina, dosyayla aynı depolama biriminde .ClearOS_Quarantine klasörüne taşınır. Uygulama silinse de dosyalar kalabilir.")
-                .setNegativeButton("Vazgeç",null)
-                .setPositiveButton("Karantinaya taşı",(dialog,which)->moveTargets(targets)).show();
+        add(ModernUi.actionCard(this,"▦","Uygulama analizi","Uygulamaların boyutu ve son kullanımı",
+                ()->startActivity(new Intent(this,DeviceToolsActivity.class).putExtra("section","apps"))),16);
     }
-
-    private void moveTargets(List<SafeScanner.Candidate> targets) {
-        if (working) return;
-        working=true; busyBar.setVisibility(View.VISIBLE); int myJob=++jobId;
-        status.setText("Dosyalar doğrulanıp karantinaya taşınıyor…"); updateSelection();
-        io.execute(() -> {
-            int ok=0, failed=0; long bytes=0;
-            Set<String> erased=new HashSet<>();
-            QuarantineManager trash=new QuarantineManager(storageRoots());
-            for (SafeScanner.Candidate c:targets) {
-                try {
-                    trash.move(c);
-                    ok++; bytes+=c.size; erased.add(c.key());
-                } catch(IOException | SecurityException e) {failed++;}
-            }
-            final int done=ok, errors=failed; final long freed=bytes;
-            runOnUiThread(() -> {
-                if (jobId!=myJob || isFinishing() || isDestroyed()) return;
-                working=false; busyBar.setVisibility(View.GONE);
-                selected.removeAll(erased);
-                ArrayList<SafeScanner.Candidate> remaining=new ArrayList<>();
-                for (SafeScanner.Candidate c:results) if (!erased.contains(c.key())) remaining.add(c);
-                results=remaining; applyFilter(); updateStorage();
-                status.setText(done+" öğe karantinada • "+size(freed)+" henüz diskten silinmedi");
-                new AlertDialog.Builder(this).setTitle("Karantina sonucu")
-                        .setMessage("Taşınan: "+done+"\nTaşınamayan: "+errors
-                                +"\nKarantinada tutulan: "+size(freed)
-                                +"\n\nGerçek boş alan artışı için Ultra araçlar > Karantina > Kalıcı sil kullan.")
-                        .setPositiveButton("Tamam",null).show();
-            });
-        });
+    private void tools() {
+        section("Yönetim araçları","Önce güvenlik, sonra depolama tasarrufu",7);
+        add(ModernUi.actionCard(this,"♻","Karantina & kurtarma","Toplu seçim, geri yükleme, kalıcı silme",
+                ()->startActivity(new Intent(this,QuarantineActivity.class))),15);
+        add(ModernUi.actionCard(this,"⚡","Ultra Mod kurulumu","Shizuku durum kontrolü ve önbellek yönetimi",
+                ()->startActivity(new Intent(this,DeviceToolsActivity.class).putExtra("section","ultra"))),9);
+        add(ModernUi.actionCard(this,"▦","Uygulamalar","Büyük / kullanılmayan uygulamaları incele",
+                ()->startActivity(new Intent(this,DeviceToolsActivity.class).putExtra("section","apps"))),9);
+        add(ModernUi.actionCard(this,"◇","Olası uygulama kalıntıları","Eski uygulamalara ait olabilecek medya klasörleri",
+                ()->startActivity(new Intent(this,DeviceToolsActivity.class).putExtra("section","residue"))),9);
+        add(ModernUi.actionCard(this,"◷","Otomasyon ve ayarlar","Haftalık tarama, korunan klasörler",
+                ()->startActivity(new Intent(this,DeviceToolsActivity.class).putExtra("section","settings"))),9);
+        add(ModernUi.actionCard(this,"≡","İşlem günlüğü","Başarılı ve başarısız temizlik işlemleri",
+                ()->startActivity(new Intent(this,ActionLogActivity.class))),9);
     }
-
-    private void show(String text) {
-        new AlertDialog.Builder(this).setMessage(text).setPositiveButton("Tamam",null).show();
-    }
-
-    private static String size(long bytes) {
-        if (bytes<1024) return bytes+" B";
-        String[] units={"KB","MB","GB","TB"};
-        double d=bytes;
-        int pos=-1;
-        do { d/=1024.0; pos++; } while (d>=1024 && pos<units.length-1);
-        return String.format(Locale.getDefault(),"%.1f %s",d,units[pos]);
-    }
-
-    private final class ResultAdapter extends BaseAdapter {
-        @Override public int getCount() { return filtered.size(); }
-        @Override public Object getItem(int position) { return filtered.get(position); }
-        @Override public long getItemId(int position) { return position; }
-
-        @Override public View getView(int position,View convertView,ViewGroup parent) {
-            Holder h;
-            if (convertView == null) {
-                LinearLayout row=new LinearLayout(MainActivity.this);
-                row.setOrientation(LinearLayout.HORIZONTAL); row.setGravity(Gravity.CENTER_VERTICAL);
-                row.setPadding(dp(9),dp(9),dp(10),dp(9)); row.setBackground(background(CARD,12));
-                CheckBox box = new CheckBox(MainActivity.this);
-                box.setButtonTintList(android.content.res.ColorStateList.valueOf(ACCENT));
-                row.addView(box,new LinearLayout.LayoutParams(dp(42),dp(43)));
-                LinearLayout texts=vertical(); row.addView(texts,new LinearLayout.LayoutParams(0,-2,1));
-                TextView name=txt("",13,FG,true); name.setSingleLine(true); name.setEllipsize(android.text.TextUtils.TruncateAt.MIDDLE);
-                texts.addView(name);
-                TextView desc=txt("",11,ORANGE,false); texts.addView(desc,lp(-1,-2,3));
-                TextView path=txt("",10,MUTED,false); path.setSingleLine(true);
-                path.setEllipsize(android.text.TextUtils.TruncateAt.MIDDLE);
-                texts.addView(path,lp(-1,-2,3));
-                h=new Holder(box,name,desc,path); row.setTag(h); convertView=row;
-            } else h=(Holder)convertView.getTag();
-            SafeScanner.Candidate c=filtered.get(position);
-            h.check.setOnCheckedChangeListener(null);
-            h.check.setChecked(selected.contains(c.key()));
-            h.check.setContentDescription("Seç: " + c.file.getName());
-            h.check.setOnClickListener(v -> toggleItem(c));
-            h.name.setText(c.file.getName());
-            h.desc.setText(c.type.label + "  •  " + size(c.size) + "  •  " + RiskEngine.risk(c).label + (c.suggested ? "  •  ÖNERİ" : ""));
-            h.path.setText(c.file.getParent() + "   ·   " + c.reason);
-            return convertView;
-        }
-    }
-
-    private static final class Holder {
-        final CheckBox check;
-        final TextView name,desc,path;
-        Holder(CheckBox a,TextView b,TextView c,TextView d) { check=a;name=b;desc=c;path=d; }
-    }
+    private void dialog(String title,String message){new AlertDialog.Builder(this).setTitle(title).setMessage(message)
+            .setPositiveButton("Tamam",null).show();}
 }

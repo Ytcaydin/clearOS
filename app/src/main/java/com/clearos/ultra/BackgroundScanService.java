@@ -73,7 +73,7 @@ public class BackgroundScanService extends JobService {
                 NotificationManager.IMPORTANCE_DEFAULT);
         channel.setDescription("Sadece tarama raporu; dosya silinmez");
         nm.createNotificationChannel(channel);
-        Intent open=new Intent(this,UltraFeaturesActivity.class);
+        Intent open=new Intent(this,MainActivity.class);
         PendingIntent click=PendingIntent.getActivity(this,JOB_ID,open,
                 PendingIntent.FLAG_UPDATE_CURRENT|PendingIntent.FLAG_IMMUTABLE);
         String detail=scan.candidates.size()+" aday incelenebilir; hiçbir dosya silinmedi.";
