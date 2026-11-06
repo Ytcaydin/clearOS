@@ -110,6 +110,8 @@ public final class MainActivity extends Activity {
             TextView label=ModernUi.text(this,names[i],10,active?ModernUi.TEAL:ModernUi.MUTED,active);
             label.setGravity(Gravity.CENTER);tile.addView(label,ModernUi.space(this,-1,-2,4));
             navigation.addView(tile,new LinearLayout.LayoutParams(0,ModernUi.dp(this,60),1));
+            tile.setClickable(true);tile.setFocusable(true);
+            tile.setContentDescription(names[i]+(active?", seçili sekme":" sekmesine git"));
             tile.setOnClickListener(x->change(to));
         }
     }
@@ -274,7 +276,12 @@ public final class MainActivity extends Activity {
             txt.addView(ModernUi.muted(this,c.type.label+" · "+ModernUi.bytes(c.size)+" · "+RiskEngine.risk(c).label,11),ModernUi.space(this,-1,-2,5));
             TextView path=ModernUi.muted(this,c.file.getParent(),10);path.setSingleLine(true);path.setEllipsize(android.text.TextUtils.TruncateAt.MIDDLE);
             txt.addView(path,ModernUi.space(this,-1,-2,4));
-            Runnable toggle=()->{if(!picked.add(c.key()))picked.remove(c.key());int y=scroll.getScrollY();render();scroll.post(()->scroll.scrollTo(0,y));};
+            boolean movable=c.type!=SafeScanner.Type.EMPTY;
+            if(!movable){box.setEnabled(false);box.setAlpha(.35f);}
+            Runnable toggle=()->{
+                if(!movable){dialog("Boş klasör", "Bu sürüm boş klasörleri bilgi amaçlı gösterir; karantinaya klasör taşımak desteklenmiyor.");return;}
+                if(!picked.add(c.key()))picked.remove(c.key());int y=scroll.getScrollY();render();scroll.post(()->scroll.scrollTo(0,y));
+            };
             box.setOnClickListener(v->toggle.run());item.setOnClickListener(v->toggle.run());add(item,7);
         }
         long totalShown=candidates.stream().filter(c->filter==null||c.type==filter).count();
@@ -381,7 +388,7 @@ public final class MainActivity extends Activity {
         month.setOnClickListener(v->{getPreferences(0).edit().putInt("trend_days",30).apply();render();});
         int days=getPreferences(0).getInt("trend_days",30);
         List<StorageHistory.Reading> history=new ArrayList<>();
-        long today=System.currentTimeMillis()/86400000L;
+        long today=StorageHistory.todayLocal();
         for(StorageHistory.Reading r:StorageHistory.list(this))if(r.day>=today-days+1 && r.day<=today)history.add(r);
         add(ModernUi.muted(this,"Gösterilen dönem: Son "+days+" gün",11),8);
         if(history.size()<2)add(ModernUi.muted(this,"Bu dönemde grafik için en az iki farklı günlük ölçüm gerekli.",12),12);
@@ -409,6 +416,8 @@ public final class MainActivity extends Activity {
                 ()->startActivity(new Intent(this,DeviceToolsActivity.class).putExtra("section","residue"))),9);
         add(ModernUi.actionCard(this,"◷","Otomasyon ve ayarlar","Haftalık tarama, korunan klasörler",
                 ()->startActivity(new Intent(this,DeviceToolsActivity.class).putExtra("section","settings"))),9);
+        add(ModernUi.actionCard(this,"✓","Cihaz tanılama", "Dosya izinleri ve servis durumunu kontrol et",
+                ()->startActivity(new Intent(this,DeviceToolsActivity.class).putExtra("section","diagnostics"))),9);
         add(ModernUi.actionCard(this,"≡","İşlem günlüğü","Başarılı ve başarısız temizlik işlemleri",
                 ()->startActivity(new Intent(this,ActionLogActivity.class))),9);
     }

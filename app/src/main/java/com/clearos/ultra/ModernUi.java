@@ -82,6 +82,8 @@ public final class ModernUi {
         pl.leftMargin=dp(c,13);frame.addView(labels,pl);
         labels.addView(text(c,title,14,TEXT,true));labels.addView(muted(c,detail,11),space(c,-1,-2,5));
         frame.addView(text(c,"›",25,MUTED,false));
+        frame.setClickable(true);frame.setFocusable(true);
+        frame.setContentDescription(title+". "+detail+". Açmak için iki kez dokun.");
         frame.setOnClickListener(v->onClick.run());return frame;
     }
     public static String bytes(long bytes) {
@@ -165,6 +167,8 @@ public final class ModernUi {
         private final Paint paint=new Paint(3);private float fraction;private final String caption;
         public Donut(Activity activity,float used,String text) {
             super(activity);fraction=Math.max(0,Math.min(1,used));caption=text;
+            setContentDescription("Depolamanın "+caption+" oranı kullanılıyor");
+            setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_YES);
         }
         @Override protected void onDraw(Canvas canvas) {
             super.onDraw(canvas);

@@ -1,33 +1,28 @@
-# ClearOS Ultra development changelog
+# Sürüm Geçmişi
 
-## 5.0.0 RC1 — derleme ve performans düzeltmeleri (2026-11-06)
-- **Derleme:** v4.0 düzeltmeleri korunarak birleştirildi — AIDL açık işlem kodları, `setAllCaps` (ModernUi), MediaReviewActivity lambda adı, resmi Gradle 8.13 wrapper (JAR depoda).
-- **Video:** Döndürme bilgisi dikkate alınıyor; dikey videolar kısa kenar 720 olacak şekilde ölçekleniyor.
-- **Performans:** Ana sayfadaki karantina boyutu arka planda hesaplanıyor (UI thread'de FUSE okuması yok).
-- **Performans:** Toplu geri yükleme ve yeni "çakışmada yeni isimle" seçeneği tek indeks anlık görüntüsüyle (`restoreBatch(items, rename, progress)`); önceden her dosya için iki tam indeks okuması (O(N²)).
-- **Test:** BatchPurgeSelfTest toplu geri yükleme + yeni isimle geri yükleme senaryolarını kapsıyor.
+## V5.0.0 RC2 — birleştirme notu (2026-11-06)
+- RC2, düzeltilmiş `v5.0.0-rc1` dalı üzerine birleştirildi; AIDL işlem kodları, `setAllCaps`, lambda adı, dikey video ölçekleme, Gradle wrapper ve toplu geri yükleme (`restoreBatch`) korunuyor.
+- Ana sayfa karantina boyutu: RC2'nin `io` executor'ındaki eşdeğer kodu yerine ayrı arka plan iş parçacığı korundu (tarama sürerken de güncellenir, ilk açılışta "-1 B" yerine "…" gösterir).
 
-## 5.0.0 RC1 — incremental source candidate (not a signed production release)
+## V5.0.0 RC2 — 6 Kasım 2026
 
-### Reliability and data safety
-- Added `TrashStore.PurgeProgress`, raised after each file result, and `QuarantineManager` cross-volume progress aggregation.
-- Quarantine Activity now updates a visible progress bar and displays `completed / total` during bulk deletion and restore.
-- Added explicit optional rename-on-conflict recovery in quarantine. Original target is never intentionally replaced; desktop regression test covers this behavior.
-- Existing batch delete confirmation, revalidation and detailed error records retained from V4.
+- Fotoğraf dedektifine kullanıcı kontrollü 6.000 / 20.000 resim tarama profilleri ve canlı tarama sayacı eklendi.
+- 20.000 sonuçla sayfa sayısı sınırlı tutulması için fotoğraflar 50'şer parça gösteriliyor.
+- Uygulama envanterindeki 150 öğelik sınır kaldırıldı; 50'şer sayfalı tarayıcı eklendi.
+- Salt okunur cihaz tanılama ekranı (dosya izni, kullanım izni, Shizuku, karantina envanteri) eklendi.
+- Depolama geçmişi yerel takvim günüyle tutulacak şekilde düzeltildi.
+- Pil tasarruf modunda haftalık taramayı başlatmama ve durdurulan JobService için çift bitiş bildirimi yapmama koruması eklendi.
+- Ana ekranda karantina listesi artık UI thread üzerinde okunmuyor. Taşıma sonrası özet arka planda yenileniyor.
+- Boş klasörleri karantinaya taşıma desteklenmediği için bu adayların seçimi engellendi; açıklama eklendi.
+- Gezinti ve işlem kartları için erişilebilirlik açıklamaları eklendi.
+- 100.000 dosyalık (sıfır bayt test nesnesi) stres testi eklendi ve yerel ortamda çalıştırıldı.
+- GitHub Actions ve CircleCI iş akışlarına XML/gizlilik denetimi ve 10.000 dosyalık duman testi eklendi.
+- Sürüm kodu 51'e yükseltildi, sürüm adı `5.0.0-rc2` yapıldı.
 
-### Information architecture and insights
-- Dashboard now shows last completed scan timestamp and number of findings, separate from recommended bytes.
-- Cleaning tab distinguishes raw candidates from auto-suggested file size.
-- Media tab shows real *current scanner candidates* for large videos and screenshots and offers one-tap large-file filter.
-- Analysis shows friendlier folder names, progressive 'show more' presentation, 7- and 30-day filters.
-- Updated Android version code/name, GitHub Actions artifact name and regression tests.
+## RC1 ve V4'ten taşınan özellikler
 
-### Verification and limitations
-- Five JVM tests passed; Android source syntax parser passed. APK build and phone QA unverified here.
-- Material 3 dependency migration, polished gallery previews for all media, full 100,000+ file performance benchmarking, battery profiling and Android instrumentation testing remain outstanding.
+- Silmede dosya bazında ilerleme ve sonuç raporu; karantina geri yükleme çakışma koruması.
+- Sekmeli tasarım, depolama halkası, kategori seçimi, büyük dosyalar, 7/30 günlük depolama grafikleri.
+- Fotoğraf/video sıkıştırma, WhatsApp/Telegram analizi, haftalık şarjda tarama, Shizuku rehberi.
 
-## Prior version history
-
-- **4.0:** Five-tab dark dashboard, full-screen quarantine, bulk permanent deletion diagnostics, media review and local operation logs.
-- **3.1:** Same-volume quarantine storage, cache command and Shizuku AIDL fixes, weekly notifications, cache/app-size accounting fixes.
-- **3.0:** Initial broad analysis, compression and opt-in advanced-tool source integration.
+**Doğrulanmayan işler:** Android SDK ile derleme, gerçek telefonda v5 RC2 kurulumu, Material 3 kütüphane geçişi, 11–16 arasındaki bütün cihaz davranışları, 20.000 fotoğrafın donanım/pil etkileri, Shizuku ve video kodlayıcı testleri.

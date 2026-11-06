@@ -4,6 +4,7 @@ import android.content.Context;
 import android.content.SharedPreferences;
 import android.os.Environment;
 import android.os.StatFs;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -14,10 +15,11 @@ public final class StorageHistory {
         public final long day, used, total;
         Reading(long d,long u,long t) {day=d;used=u;total=t;}
     }
+    public static long todayLocal() { return LocalDate.now().toEpochDay(); }
     public static void record(Context c) {
         StatFs stat=new StatFs(Environment.getExternalStorageDirectory().getAbsolutePath());
         long total=stat.getTotalBytes(),used=total-stat.getAvailableBytes();
-        long today=System.currentTimeMillis()/86400000L;
+        long today=todayLocal();
         SharedPreferences p=c.getSharedPreferences("usage_history",0);
         List<Reading> entries=list(c);
         entries.removeIf(r->r.day==today || r.day<today-365);

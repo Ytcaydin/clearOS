@@ -1,46 +1,37 @@
-# ClearOS Ultra — V5.0.0 RC1 source candidate
+# ClearOS Ultra V5.0.0 RC2
 
-Private, offline Android 11–16 storage analysis/cleaner. No advertisements, Internet permission, telemetry or unapproved file deletion. This is a **source release candidate, not a verified installed APK or a production-stable 5.0 release**.
+Kişisel, çevrimdışı Android depolama yönetimi uygulaması. **Bu paket bir kaynak kodu sürüm adayıdır; gerçek Android APK derlemesi veya cihaz testi tamamlanmış değildir.**
 
-## V5 changes implemented on top of V4
+## Bu pakette mevcut olanlar
 
-- **Quarantine:** per-file and percentage progress plus a visible progress bar during confirmed batch permanent deletion; verified reports continue to distinguish successful/failed deletes. Entries are reloaded after operations.
-- **Restoration:** a separate explicit 'restore with different name on conflict' choice. It uses `Files.move` without overwrite, and preserves the existing destination file if a collision occurs.
-- **Main dashboard and cleaning:** most recent scan date and candidate count, clarified difference between *findings* and *automatically recommended bytes*, avoids interpreting `0 B suggested` as `0 files found`.
-- **Media tab:** live summary of large-video candidates and screenshots from the current scanner session, plus a direct large-file review shortcut. Counts show an unavailable state before scanning.
-- **Analysis:** readable storage path labels (`Dahili depolama / ...`), paged folder list, 7/30-day trend range controls driven by locally stored daily history.
-- **Tests:** fifth pure-Java regression group covering collision-safe restoration, progress and formatting.
+- Beş sekmeli ana arayüz: Ana Sayfa, Temizlik, Medya, Analiz, Araçlar.
+- SHA-256 ile doğrulanan kopya tespiti; risk sınıflandırması; eski APK, arşiv, büyük dosya ve erişilebilir medya taraması.
+- Aynı depolama birimindeki `.ClearOS_Quarantine` klasöründe geri alınabilir karantina.
+- Kullanıcı onayıyla kalıcı silme; dosya bazında ilerleme ve hata raporu; mevcut dosyanın üzerine yazmadan alternatif adla geri yükleme.
+- Aynı klasördeki eski dosyaları değil yalnızca kullanıcı tarafından seçilmiş dosyaları işleme.
+- Fotoğraf benzerliği ve olası bulanıklık incelemesi; **6.000 fotoğraflık hızlı** veya uyarıyla **20.000 fotoğraflık ayrıntılı** tarama.
+- Fotoğraf sonuçlarında 50'şer öğelik sayfalama, manuel seçim; sıkıştırmada orijinaller korunur.
+- Erişilebilen WhatsApp ve Telegram medyasının salt okunur analizi.
+- Uygulama envanterinde 50'şer öğelik sayfalama.
+- Depolama haritası, yerel takvime göre günlük 7/30 günlük kullanım grafikleri.
+- Ekranı bloke etmeden arka planda karantina boyutunu yenileme; boş klasörlerin yanlışlıkla seçilememesi.
+- Kullanıcı izinlerinin, Shizuku durumunun ve karantinanın **salt okunur tanılama ekranı**.
+- Şarjdayken, pil tasarrufu kapalıyken haftalık tarama (silme yok), dışlanan klasörlerin korunması, yerel işlem günlüğü.
+- İnternet izni, reklam, telemetri veya otomatik dosya silme yok.
 
-## Previous V4 features retained
+## Önemli güvenlik noktaları
 
-- Five-tab dark interface, SHA-256 duplicate checks, protected directories and single-volume `.ClearOS_Quarantine` folders.
-- Reversible quarantine, opt-in permanent deletion, per-file error reporting and local logs.
-- Visual review of similar/blurry photo candidates; media compression preserves originals; WhatsApp/Telegram accessible-media inventory.
-- App inventory and advisory residue checks, opt-in Shizuku/Porter cache action, charging-only weekly scan and user-excluded folders.
-- GitHub Actions and CircleCI build workflows.
+**Yalnızca test dosyalarında silme ve geri yükleme doğrulaması yapın.** Benzer fotoğraf tespiti hata yapabilir; uygulama önemli içerikleri kendiliğinden kaldırmaz. Karantinaya taşıma boş alan oluşturmaz, kalıcı silme geri alınamaz.
 
-## Safety and updates
+Paket kimliği `com.clearos.ultra`; karantina klasörü `.ClearOS_Quarantine` olarak korunmuştur. **Eski kurulumla farklı imzalanmış APK, üzerine güncelleme yapamaz.** Karantina kayıtları ve orijinal yollar yedeklenmeden mevcut APK'yı kaldırmayın.
 
-**Always review what is selected before permanent deletion.** Quarantine itself consumes storage. Personal media, backups and system files must not be automatically removed. Clearing a folder based only on its filename is unsafe.
+## Doğrulama ve teslimat
 
-The app keeps package ID `com.clearos.ultra` and quarantine directory `.ClearOS_Quarantine`. Upgrading an installed APK requires the **same signing certificate**. If the new build is signed differently, do NOT uninstall the current app without preserving the quarantine files and original-path metadata first.
+- `bash tools/test-scanner.sh`: beş JVM birim/regresyon grubu ve Android Java sözdizimi ayrıştırması.
+- `bash tools/stress-100k.sh 100000`: 100.000 boş boyutlu test dosyasıyla masaüstü dosya gezinme testi (fotoğraf/kopya karmaşık iş yükü değildir).
+- `python3 tools/quality-check.py`: XML, manifest, CI ve temel gizlilik kontrolleri.
+- `BUILD-APK.md`: GitHub Actions veya CircleCI ile APK derleme.
+- `DEVICE-TEST-CHECKLIST.md`: telefonda güvenli doğrulama adımları.
+- `ROADMAP-STATUS.md`: tamamlananlar, kısmen uygulananlar ve kalan işler.
 
-## Validation status
-
-- Five portable JVM regression suites passed in this environment.
-- Android Java source was parsed for syntax (NOT linked or compiled against Android SDK).
-- Manifest and project files were checked for validity and absence of the `INTERNET` permission.
-- **No Android SDK/Gradle is available here.** APK generation, Android 15/16 UI layout, device storage provider behavior, actual Shizuku authorization and Media3 encoder tests remain unverified.
-
-A number of roadmap ideas are **not** completed simply by calling this package V5. Material 3 widgets, automatic identification of an entire media library, benchmarks on 100,000+ files, full automated Android UI tests, accessiblity audit, and hardware/power measurements require further development and Android testing. Treat this RC as a tested incremental improvement, not proof that every V4.1–V5.0 roadmap item is complete.
-
-## Build
-
-See `BUILD-APK.md`. GitHub Actions: push the root project directory into a repository, open **Actions → ClearOS Ultra 5.0 RC Android APK → Run workflow**, and retrieve `ClearOS-Ultra-v5-rc1-debug-apk` from artifacts if the build succeeds. CircleCI configuration is also included. Do not copy the ZIP wrapper directory as an extra repository level.
-
-## Technical notes
-
-- Android API 30–36, Kotlin not required, Java 17, Android Gradle Plugin 8.13.2, Gradle 8.13.
-- Runtime permissions and storage access depend on Android's policies. No generic bypass of apps' private data is claimed.
-- Local source tests: `bash tools/test-scanner.sh`
-- Additional QA: `python3 tools/quality-check.py`
+JDK masaüstü testleri geçti, ancak bu çalışma ortamında **Android SDK ve Gradle yok; APK derlenemedi.** Media3, Shizuku, Android 11–16 cihaz testleri ve Material 3 bileşenlerine tam geçiş henüz doğrulanmadı/tamamlanmadı.

@@ -1,34 +1,32 @@
-# Build ClearOS Ultra 5.0 RC1 APK
+# ClearOS Ultra V5.0.0 RC2 — APK oluşturma
 
-An APK is **not** included in this ZIP. Android Gradle Plugin needs Android SDK packages, JDK 17 and network access to retrieve dependencies. This assistant environment does not have an Android SDK available.
+Kaynak pakette APK bulunmaz. **Bu ortamda Android SDK ve Gradle olmadığı için APK burada derlenip doğrulanamadı.**
 
-## GitHub Actions
+## GitHub Actions (önerilen)
 
-1. Upload the *contents* of this project directory to a private GitHub repository. The `.github/workflows/android.yml` file must appear at the repository root.
-2. Open **Actions → ClearOS Ultra 5.0 RC Android APK → Run workflow** (or push to trigger a run).
-3. A successful build runs five JVM test suites and `gradle --no-daemon --stacktrace assembleDebug`.
-4. Download the `ClearOS-Ultra-v5-rc1-debug-apk` artifact. The Android package will be `app-debug.apk`.
+1. Bu klasörün *içindekileri* bir GitHub deposunun ana dizinine yükle; `.github/workflows/android.yml` kökte olmalı.
+2. GitHub → **Actions → ClearOS Ultra 5.0 RC2 Android APK** → **Run workflow** (veya repoya push yap).
+3. Workflow JDK 17, Android API 36, Gradle 8.13 ile beş JVM testini, kalite denetimini, 10.000 dosyalık duman testini ve `assembleDebug` adımını çalıştırır.
+4. Yeşil tamamlanırsa **Artifacts → ClearOS-Ultra-v5-rc2-debug-apk** arşivinden `app-debug.apk` dosyasını indir.
+5. APK'nın kurulduğunu ve karantina işlemlerini yalnızca test dosyalarında doğrula.
 
 ## CircleCI
 
-Use `.circleci/config.yml` and the workflow's `build-apk` job. A successful build publishes `app/build/outputs/apk/debug` under the artifacts tab.
+`.circleci/config.yml` kök dizinde bulunmalı. `build-apk` işini çalıştır; APK `app/build/outputs/apk/debug/` artefaktı altında olur.
 
-## Local build with installed tools
+## Yerelde
 
-- Android SDK Platform 36 and Build Tools 36.0.0
-- Gradle 8.13, Android Gradle Plugin 8.13.2, JDK 17
-- Run `bash tools/test-scanner.sh` and `gradle assembleDebug`.
+Android SDK Platform 36, JDK 17, Gradle 8.13 (veya ilk çalıştırmada kontrol edilen `./gradlew`) gerekir. 
 
-**Certificate warning:** Android only accepts updates signed by the same signing certificate. CI debug APKs may use different certificates than existing builds. Do not uninstall an existing app if its quarantine data has not been backed up (including the metadata under `.ClearOS_Quarantine/index`).
+```bash
+bash tools/test-scanner.sh
+python3 tools/quality-check.py
+bash tools/stress-100k.sh 100000 # isteğe bağlı, büyük test
+./gradlew --no-daemon --stacktrace assembleDebug
+```
 
-## Verification after installation
+Gradle 8.13 ile Android Gradle Plugin 8.13.2 resmî uyumluluk gereksinimine uygundur; ancak projenin bağımlılıklarının **gerçek derleme uyumu henüz kanıtlanmadı**.
 
-1. Grant file access permission and scan a small test folder.
-2. Select a disposable test file, quarantine it, then restore it.
-3. Create a destination name collision and use 'Çakışmada yeni isimle' to ensure both files survive.
-4. Quarantine several disposable files and test bulk deletion; verify the visual percentage and final counts.
-5. Confirm 7/30-day view, readable folder names, exclusion settings and permission prompts.
-6. Test Shizuku separately only after installing/authorizing its service. Confirm Media3 transcoding only with disposable input files.
-7. Test screen insets, screen rotation, background/low memory interruptions and accessibility, then record unexpected behavior.
+### İmza güvenliği
 
-Do not represent parse-only validation as a successful Android build.
+CI debug APK'sı farklı imzalanabilir. Android aynı paket adının farklı imzalı APK ile doğrudan güncellenmesine izin vermez. **Mevcut ClearOS uygulamasını sırf güncelleme yapmak için kaldırma**; önemli veriler ve orijinal-karantina metadata kayıtlarını koru. Mümkünse önce mevcut sürümü imzalayan anahtarla APK oluştur.

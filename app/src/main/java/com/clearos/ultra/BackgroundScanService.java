@@ -16,11 +16,13 @@ import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.Environment;
+import android.os.PowerManager;
 
 import java.io.File;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /** Charging-only weekly report; no file mutations. Uses the same exclusion rules as foreground. */
 public class BackgroundScanService extends JobService {
@@ -28,6 +30,7 @@ public class BackgroundScanService extends JobService {
     private static final String CHANNEL="weekly_scan";
     private final ExecutorService worker=Executors.newSingleThreadExecutor();
     private Future<?> task;
+    private final AtomicBoolean stopped=new AtomicBoolean(false);
     public static void schedule(Context c,boolean enable) {
         JobScheduler jobs=(JobScheduler)c.getSystemService(Context.JOB_SCHEDULER_SERVICE);
         if(jobs==null)return;
@@ -42,6 +45,10 @@ public class BackgroundScanService extends JobService {
     }
     @Override public boolean onStartJob(JobParameters parameters) {
         if(!Environment.isExternalStorageManager()) return false;
+        PowerManager power=(PowerManager)getSystemService(POWER_SERVICE);
+        // Charging requirement alone does not mean power saving mode is off.
+        if(power!=null && power.isPowerSaveMode())return false;
+        stopped.set(false);
         SharedPreferences p=getSharedPreferences("excluded",0);
         ExcludedPaths exclusions=new ExcludedPaths(p.getBoolean("DCIM",false),
                 p.getBoolean("Documents",false),p.getBoolean("Download",false));
@@ -60,7 +67,7 @@ public class BackgroundScanService extends JobService {
                             .putInt("count",scan.candidates.size()).apply();
                     notifyReport(scan);
                 }
-            } finally {jobFinished(parameters,false);}
+            } finally {if(!stopped.get())jobFinished(parameters,false);}
         });
         return true;
     }
@@ -87,6 +94,7 @@ public class BackgroundScanService extends JobService {
         nm.notify(JOB_ID,notification);
     }
     @Override public boolean onStopJob(JobParameters parameters) {
+        stopped.set(true);
         if(task!=null)task.cancel(true);
         return true;
     }

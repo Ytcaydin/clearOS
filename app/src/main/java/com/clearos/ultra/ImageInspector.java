@@ -26,12 +26,16 @@ public final class ImageInspector {
         public int blurryCandidates;
     }
     public static Results inspect(List<File> roots, SafeScanner.Progress progress) {
+        return inspect(roots,progress,6000);
+    }
+    /** User-initiated scan. Limit bounds memory and battery use; no automatic deletion. */
+    public static Results inspect(List<File> roots, SafeScanner.Progress progress,int requestedLimit) {
         Results result=new Results();
         ArrayDeque<File> todo=new ArrayDeque<>(roots);
         Set<String> seen=new HashSet<>();
         Map<String,File> origin=new HashMap<>();
         SimilarityIndex index=new SimilarityIndex();
-        final int max=6000;
+        final int max=Math.max(1,Math.min(20000,requestedLimit));
         while(!todo.isEmpty() && result.inspected<max) {
             if (progress.isCancelled()) {result.cancelled=true;return result;}
             File f=todo.removeLast();

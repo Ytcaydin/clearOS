@@ -29,6 +29,12 @@ jobs:
       - name: Güvenlik ve regresyon testleri (saf Java)
         run: bash tools/test-scanner.sh
 
+      - name: Manifest, XML ve gizlilik kontrolleri
+        run: python3 tools/quality-check.py
+
+      - name: 10.000 dosyalık tarama duman testi
+        run: bash tools/stress-100k.sh 10000
+
       - uses: gradle/actions/setup-gradle@v4
 
       - name: Debug APK derle
@@ -37,7 +43,7 @@ jobs:
       - name: APK'yı artifact olarak yükle
         uses: actions/upload-artifact@v4
         with:
-          name: ClearOS-Ultra-v5-rc1-debug-apk
+          name: ClearOS-Ultra-v5-rc2-debug-apk
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 30

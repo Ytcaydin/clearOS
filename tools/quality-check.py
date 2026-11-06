@@ -10,8 +10,8 @@ manifest=(android/'AndroidManifest.xml').read_text()
 assert 'android.permission.INTERNET' not in manifest, 'Internet permission must not be requested'
 assert '.QuarantineActivity' in manifest and '.MainActivity' in manifest
 version=(root/'app/build.gradle').read_text()
-assert re.search(r'versionCode\s+50\b',version) and "versionName '5.0.0'" in version
-assert re.search(r'(./gradlew|gradle) --no-daemon --stacktrace assembleDebug',(root/'.github/workflows/android.yml').read_text())
+assert re.search(r'versionCode\s+51\b',version) and "versionName '5.0.0-rc2'" in version
+assert re.search(r'(\./gradlew|gradle) --no-daemon --stacktrace assembleDebug',(root/'.github/workflows/android.yml').read_text())
 assert (root/'.circleci/config.yml').is_file()
 assert 'FileAlreadyExistsException' in (android/'java/com/clearos/ultra/TrashStore.java').read_text()
 print(f'PASS: {len(xml_files)} XML, manifest privacy, build metadata, CI and restoration checks')

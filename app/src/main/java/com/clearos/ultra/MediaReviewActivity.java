@@ -35,7 +35,8 @@ public final class MediaReviewActivity extends Activity {
     private boolean busy=false;
     private ImageInspector.Results photoResults;
     private final Set<String> photoSelected=new HashSet<>();
-    private int photoVisible=50;
+    private int photoPage=0;
+    private int photoLimit=6000;
     private TextView selectedSummary;
     @Override public void onCreate(Bundle b){super.onCreate(b);section=getIntent().getStringExtra("section");
         if(section==null)section="photos";build();}
@@ -91,14 +92,22 @@ public final class MediaReviewActivity extends Activity {
     }
     private void photos(){
         add(ModernUi.section(this,"Görüntü analizi","Benzerlik veya bulanıklık tespiti kesin silme kararı değildir."),4);
-        Button scan=ModernUi.button(this,"Fotoğrafları analiz et (en çok 6.000)",true);
-        add(scan,15);scan.setOnClickListener(v->{if(busy){stopped.set(true);return;}scanPhotos();});
-        info("Benzer fotoğrafları tek başına silmiyoruz. Kayıtlı orijinal korunur. Önce görüntüleri inceleyebilirsin.");
+        Button scan=ModernUi.button(this,"Hızlı tarama · 6.000 fotoğraf",true);
+        add(scan,15);scan.setOnClickListener(v->{if(!busy)scanPhotos(6000);});
+        Button extensive=ModernUi.button(this,"Ayrıntılı tarama · 20.000 fotoğraf",false);
+        add(extensive,9);extensive.setOnClickListener(v->{if(!busy)new AlertDialog.Builder(this)
+                .setTitle("Ayrıntılı fotoğraf taraması")
+                .setMessage("20.000 fotoğrafa kadar analiz uzun sürebilir ve pil tüketebilir. Fotoğrafların hiçbiri otomatik silinmez.")
+                .setNegativeButton("Vazgeç",null)
+                .setPositiveButton("Taramayı başlat",(d,w)->scanPhotos(20000)).show();});
+        info("Benzer fotoğrafları tek başına silmiyoruz. En iyi görüntü önerisi kesin sonuç değildir; önce görüntüleri incele.");
     }
-    private void scanPhotos(){
+    private void scanPhotos(int requestedLimit){
+        photoLimit=requestedLimit;
         if(!Environment.isExternalStorageManager()){message("İzin gerekli","Tüm dosyalara erişim iznini açmalısın.");return;}
         busy=true;stopped.set(false);items.removeAllViews();
-        add(ModernUi.text(this,"Fotoğraflar inceleniyor…",16,ModernUi.TEAL,true),0);
+        TextView running=ModernUi.text(this,"Fotoğraflar inceleniyor (0 / "+photoLimit+")…",16,ModernUi.TEAL,true);
+        add(running,0);
         Button stopButton=ModernUi.button(this,"Taramayı durdur",false);add(stopButton,14);
         stopButton.setOnClickListener(v->{stopped.set(true);stopButton.setText("Durduruluyor…");stopButton.setEnabled(false);});
         android.content.SharedPreferences p=getSharedPreferences("excluded",0);
@@ -107,16 +116,19 @@ public final class MediaReviewActivity extends Activity {
             ImageInspector.Results report=ImageInspector.inspect(StorageRoots.available(this),new SafeScanner.Progress(){
                 public boolean isCancelled(){return stopped.get()||Thread.currentThread().isInterrupted();}
                 public boolean exclude(File file){return exclusions.excludes(file);}
-                public void onUpdate(long count,String path){ }
-            });
+                public void onUpdate(long count,String path){
+                    runOnUiThread(()->{if(!isDestroyed()&&busy)running.setText(
+                            count+" / "+photoLimit+" fotoğraf değerlendirildi…");});
+                }
+            },photoLimit);
             runOnUiThread(()->{
                 if(isDestroyed())return;busy=false;items.removeAllViews();
                 if(report.cancelled){add(ModernUi.text(this,"Tarama durduruldu. Yeniden başlatabilirsin.",15,ModernUi.AMBER,true),0);
-                    Button repeat=ModernUi.button(this,"Yeniden tara",true);add(repeat,14);repeat.setOnClickListener(v->scanPhotos());return;}
+                    Button repeat=ModernUi.button(this,"Yeniden tara",true);add(repeat,14);repeat.setOnClickListener(v->scanPhotos(photoLimit));return;}
                 add(ModernUi.text(this,report.inspected+" fotoğraf analiz edildi",19,ModernUi.TEXT,true),0);
                 info(report.similarGroups+" benzer grup · "+report.blurryCandidates+" olası bulanık görüntü"
-                        +(report.limited?" · 6.000 sınırına ulaşıldı":""));
-                photoResults=report;photoSelected.clear();photoVisible=50;
+                        +(report.limited?" · "+photoLimit+" sınırına ulaşıldı":""));
+                photoResults=report;photoSelected.clear();photoPage=0;
                 drawPhotoResults();
             });
         });
@@ -126,7 +138,7 @@ public final class MediaReviewActivity extends Activity {
         if(photoResults==null)return;
         add(ModernUi.text(this,photoResults.inspected+" fotoğraf kontrol edildi",19,ModernUi.TEXT,true),0);
         info(photoResults.similarGroups+" benzer grup · "+photoResults.blurryCandidates+" olası bulanık görüntü"+
-                (photoResults.limited?" · 6.000 sınırı doldu":""));
+                (photoResults.limited?" · "+photoLimit+" sınırı doldu":""));
         selectedSummary=ModernUi.text(this,photoSelected.size()+" fotoğraf seçili",13,ModernUi.AMBER,true);
         add(selectedSummary,17);
         LinearLayout actions=ModernUi.row(this);
@@ -138,12 +150,23 @@ public final class MediaReviewActivity extends Activity {
         add(actions,10);
         clear.setOnClickListener(v->{photoSelected.clear();drawPhotoResults();});
         move.setOnClickListener(v->moveSelectedPhotos());
-        int display=Math.min(photoVisible,photoResults.candidates.size());
-        for(int i=0;i<display;i++)renderPhoto(photoResults.candidates.get(i));
-        if(photoResults.candidates.size()>display){
-            Button more=ModernUi.button(this,"Sonraki 50 fotoğrafı göster ("+
-                    (photoResults.candidates.size()-display)+" kaldı)",false);
-            add(more,10);more.setOnClickListener(v->{photoVisible+=50;drawPhotoResults();});
+        if(photoPage*50>=photoResults.candidates.size())photoPage=Math.max(0,(photoResults.candidates.size()-1)/50);
+        int start=photoPage*50;
+        int end=Math.min(start+50,photoResults.candidates.size());
+        info(photoResults.candidates.isEmpty()?"İncelenmesi gereken aday bulunmadı.":
+                (start+1)+"–"+end+" / "+photoResults.candidates.size()+" sonuç · Sayfa "+(photoPage+1));
+        for(int i=start;i<end;i++)renderPhoto(photoResults.candidates.get(i));
+        if(photoResults.candidates.size()>50){
+            LinearLayout pages=ModernUi.row(this);
+            Button previous=ModernUi.button(this,"Önceki 50",false);
+            Button next=ModernUi.button(this,"Sonraki 50",false);
+            pages.addView(previous,new LinearLayout.LayoutParams(0,ModernUi.dp(this,45),1));
+            LinearLayout.LayoutParams gap=new LinearLayout.LayoutParams(0,ModernUi.dp(this,45),1);
+            gap.leftMargin=ModernUi.dp(this,8);pages.addView(next,gap);
+            previous.setEnabled(photoPage>0);next.setEnabled(end<photoResults.candidates.size());
+            previous.setOnClickListener(v->{photoPage--;drawPhotoResults();});
+            next.setOnClickListener(v->{photoPage++;drawPhotoResults();});
+            add(pages,12);
         }
     }
     private void moveSelectedPhotos(){
@@ -182,6 +205,7 @@ public final class MediaReviewActivity extends Activity {
         ImageView preview=new ImageView(this);preview.setScaleType(ImageView.ScaleType.CENTER_CROP);
         try {BitmapFactory.Options o=new BitmapFactory.Options();o.inJustDecodeBounds=true;
             BitmapFactory.decodeFile(c.file.getAbsolutePath(),o);o.inJustDecodeBounds=false;
+            o.inPreferredConfig=Bitmap.Config.RGB_565;
             o.inSampleSize=1;while(Math.max(o.outWidth,o.outHeight)/o.inSampleSize>180)o.inSampleSize*=2;
             Bitmap img=BitmapFactory.decodeFile(c.file.getAbsolutePath(),o);preview.setImageBitmap(img);
         }catch(Exception|OutOfMemoryError ignored) { }

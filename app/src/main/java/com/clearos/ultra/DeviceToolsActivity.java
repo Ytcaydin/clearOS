@@ -18,6 +18,7 @@ import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
+import java.io.File;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -28,6 +29,8 @@ public final class DeviceToolsActivity extends Activity {
     private LinearLayout root,content;
     private String section;
     private UltraAccess access;
+    private List<AppInsights.App> appSnapshot;
+    private int appPage=0;
     @Override public void onCreate(Bundle state) {super.onCreate(state);
         section=getIntent().getStringExtra("section");if(section==null)section="apps";
         access=new UltraAccess(this);build();}
@@ -40,12 +43,14 @@ public final class DeviceToolsActivity extends Activity {
             root.setPadding(ModernUi.dp(this,18)+b.left,ModernUi.dp(this,18)+b.top,
                     ModernUi.dp(this,18)+b.right,b.bottom);return w;});setContentView(root);
         String heading=section.equals("ultra")?"Ultra Mod":section.equals("residue")?"Uygulama kalıntıları":
-                section.equals("settings")?"Otomasyon & güvenlik":"Uygulama analizi";
+                section.equals("settings")?"Otomasyon & güvenlik":
+                section.equals("diagnostics")?"Cihaz tanılaması":"Uygulama analizi";
         root.addView(ModernUi.text(this,heading,23,ModernUi.TEXT,true));
-        root.addView(ModernUi.muted(this,"ClearOS Ultra 4.0 · Yerel, güvenli ve izinli işlemler",12),ModernUi.space(this,-1,-2,9));
+        root.addView(ModernUi.muted(this,"ClearOS Ultra 5.0 · Yerel, güvenli ve izinli işlemler",12),ModernUi.space(this,-1,-2,9));
         ScrollView scroll=new ScrollView(this);root.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
         content=ModernUi.column(this);content.setPadding(0,ModernUi.dp(this,14),0,ModernUi.dp(this,25));scroll.addView(content);
-        switch(section){case "ultra":ultra();break;case "residue":residue();break;case "settings":settings();break;default:apps();}
+        switch(section){case "ultra":ultra();break;case "residue":residue();break;
+            case "settings":settings();break;case "diagnostics":diagnostics();break;default:apps();}
     }
     private void add(View child,int top){content.addView(child,ModernUi.space(this,-1,-2,top));}
     private void note(String msg){add(ModernUi.muted(this,msg,12),9);}
@@ -59,19 +64,36 @@ public final class DeviceToolsActivity extends Activity {
         add(ModernUi.muted(this,"Uygulamalar yükleniyor…",13),18);
         executor.execute(()->{
             List<AppInsights.App> apps=AppInsights.getApps(this);
-            runOnUiThread(()->{
-                if(isDestroyed())return;content.removeAllViews();
-                add(ModernUi.section(this,apps.size()+" uygulama","Büyük ve az kullanılan uygulamalar için inceleme"),0);
-                for(int i=0;i<Math.min(150,apps.size());i++){
-                    AppInsights.App app=apps.get(i);
-                    add(ModernUi.actionCard(this,"▦",app.name,(app.system?"Sistem · ":"")+
-                            ModernUi.bytes(app.storage)+" · "+(app.lastUsed<=0?"Son kullanım bilinmiyor":
-                            "Son kullanım: "+new java.text.SimpleDateFormat("dd.MM.yy",java.util.Locale.getDefault())
-                                    .format(new java.util.Date(app.lastUsed))),()->showApp(app)),8);
-                }
-                if(apps.size()>150)note("İlk 150 uygulama gösteriliyor; tam envanter için ileride sayfalama eklenecek.");
-            });
+            runOnUiThread(()->{if(isDestroyed())return;
+                appSnapshot=apps;appPage=0;showAppPage();});
         });
+    }
+    private void showAppPage(){
+        if(appSnapshot==null)return;
+        content.removeAllViews();
+        int start=appPage*50,end=Math.min(appSnapshot.size(),start+50);
+        if(appSnapshot.isEmpty()){
+            add(ModernUi.section(this,"Uygulama bulunamadı",
+                    "Uygulama görünürlüğü ve kullanım erişimi iznini kontrol et."),0);return;
+        }
+        add(ModernUi.section(this,appSnapshot.size()+" uygulama",(start+1)+"–"+end+
+                " gösteriliyor · Uygulama bilgileri salt okunur"),0);
+        for(int i=start;i<end;i++){
+            AppInsights.App app=appSnapshot.get(i);
+            add(ModernUi.actionCard(this,"▦",app.name,(app.system?"Sistem · ":"")+
+                    ModernUi.bytes(app.storage)+" · "+(app.lastUsed<=0?"Son kullanım bilinmiyor":
+                    "Son kullanım: "+new java.text.SimpleDateFormat("dd.MM.yy",java.util.Locale.getDefault())
+                            .format(new java.util.Date(app.lastUsed))),()->showApp(app)),8);
+        }
+        LinearLayout nav=ModernUi.row(this);
+        Button prev=ModernUi.button(this,"Önceki 50",false),next=ModernUi.button(this,"Sonraki 50",false);
+        nav.addView(prev,new LinearLayout.LayoutParams(0,ModernUi.dp(this,47),1));
+        LinearLayout.LayoutParams right=new LinearLayout.LayoutParams(0,ModernUi.dp(this,47),1);
+        right.leftMargin=ModernUi.dp(this,8);nav.addView(next,right);
+        prev.setEnabled(appPage>0);next.setEnabled(end<appSnapshot.size());
+        prev.setOnClickListener(v->{appPage--;showAppPage();});
+        next.setOnClickListener(v->{appPage++;showAppPage();});
+        add(nav,16);
     }
     private void showApp(AppInsights.App app){
         new AlertDialog.Builder(this).setTitle(app.name)
@@ -138,6 +160,42 @@ public final class DeviceToolsActivity extends Activity {
                     }).show();
         }),9);
     }
+    /** Read-only on-device checks: no shell commands, no file changes and no telemetry. */
+    private void diagnostics(){
+        add(ModernUi.section(this,"Cihaz kontrol listesi","Çalışma izni ve temizlik ortamı · Salt okunur"),2);
+        boolean storage=Environment.isExternalStorageManager();
+        diagnosticCard("Paylaşılan dosya erişimi",storage,"Tüm dosyalara erişim izni");
+        diagnosticCard("Uygulama kullanım izni",AppInsights.hasUsageAccess(this),
+                "Son kullanılan uygulamalar ve boyut istatistikleri");
+        boolean shizuku=access.running();
+        diagnosticCard("Shizuku/Porter servisi",shizuku,
+                "İsteğe bağlı ADB tabanlı temizlik");
+        diagnosticCard("Shizuku yetkisi",shizuku&&access.approved(),
+                "ClearOS uygulama yetkilendirmesi");
+        List<File> roots=StorageRoots.available(this);
+        diagnosticCard("Depolama birimleri",!roots.isEmpty(),roots.size()+" birim görülebiliyor");
+        add(ModernUi.actionCard(this,"♻","Karantina envanteri",
+                "Dosyalara dokunmadan karantina kayıtlarını incele",()->{
+                    executor.execute(()->{
+                        QuarantineManager manager=new QuarantineManager(StorageRoots.available(this));
+                        int count=manager.list().size();long bytes=manager.containedBytes();
+                        runOnUiThread(()->{if(!isDestroyed())alert("Karantina kaydı",
+                            count+" dosya · "+ModernUi.bytes(bytes)+
+                            "\nBu işlem hiçbir dosyayı silmedi.");});
+                    });
+                }),16);
+        add(ModernUi.actionCard(this,"≡","İşlem günlüğü",
+                "Başarısız işlemlerin yerel raporunu aç",()->
+                startActivity(new Intent(this,ActionLogActivity.class))),9);
+        note("Tanılama sadece erişim ve servis durumlarını okur. Başarı gösterilmesi, tüm Android API işlemlerinin test edildiği anlamına gelmez.");
+    }
+    private void diagnosticCard(String title,boolean ok,String explanation){
+        LinearLayout card=ModernUi.card(this);
+        card.addView(ModernUi.text(this,(ok?"✓  ":"!  ")+title,15,
+                ok?ModernUi.TEAL:ModernUi.AMBER,true));
+        card.addView(ModernUi.muted(this,explanation,12),ModernUi.space(this,-1,-2,7));
+        add(card,8);
+    }
     private void settings(){
         add(ModernUi.section(this,"Haftalık kontrol","Yalnızca şarjdayken çalışır · otomatik silme yok"),2);
         CheckBox weekly=new CheckBox(this);weekly.setText("Haftada bir tarama ve bildirim");weekly.setTextColor(ModernUi.TEXT);
@@ -154,6 +212,9 @@ public final class DeviceToolsActivity extends Activity {
             check.setChecked(getSharedPreferences("excluded",0).getBoolean(key,false));add(check,9);
             check.setOnCheckedChangeListener((button,enabled)->getSharedPreferences("excluded",0).edit().putBoolean(key,enabled).apply());
         }
+        add(ModernUi.actionCard(this,"✓","Cihaz tanılaması",
+                "Dosya izinlerini, Shizuku yetkisini ve karantina durumunu kontrol et",()->
+                startActivity(new Intent(this,DeviceToolsActivity.class).putExtra("section","diagnostics"))),18);
         add(ModernUi.actionCard(this,"◷","Son haftalık tarama","Önceki taramanın özetini göster",()->{
             long time=getSharedPreferences("background_scan",0).getLong("time",0);
             long bytes=getSharedPreferences("background_scan",0).getLong("suggestions",0);
