@@ -121,24 +121,29 @@ public final class UltraAccess {
                 return;
             }
             String probeText=probe.text();
-            ActionLog.add(context,"ADB önbellek","id testi "+probeMs+" ms · kod "+probe.code+(probe.timedOut?" · zaman aşımı":"")+" · "+probeText);
+            // "uid=2000(shell) gid=… groups=…" -> "uid=2000(shell)"
+            String probeShort=probeText.isEmpty()?"":probeText.split("\\s+")[0];
+            ActionLog.add(context,"ADB önbellek","Kabuk testi "+probeMs+" ms · kod "+probe.code+(probe.timedOut?" · zaman aşımı":"")
+                    +(probeShort.isEmpty()?"":" · "+probeShort));
             if(probe.timedOut||probe.code!=0){
                 finish.accept("Shizuku kabuğu yanıt vermedi.\n\nTest komutu (id): "+(probe.timedOut?"15 sn'de bitmedi":"kod "+probe.code)
                         +(probeText.isEmpty()?"":"\n"+probeText)+"\n\nShizuku uygulamasında servisi durdurup yeniden başlatmayı dene.");
                 return;
             }
             trimming.set(true);
+            long trimStart=android.os.SystemClock.elapsedRealtime();
             Run trim=run(newProcess,TRIM,TRIM_TIMEOUT_MS);
-            long sec=(android.os.SystemClock.elapsedRealtime()-t0)/1000;
+            long trimMs=android.os.SystemClock.elapsedRealtime()-trimStart;
+            String took=trimMs<1000?"1 saniyeden kısa":(trimMs/1000)+" sn";
             String text=trim.text();
-            ActionLog.add(context,"ADB önbellek","trim-caches "+sec+" sn · kod "+trim.code+(trim.timedOut?" · zaman aşımı":"")
+            ActionLog.add(context,"ADB önbellek","trim-caches "+took+" · kod "+trim.code+(trim.timedOut?" · zaman aşımı":"")
                     +(trim.error!=null?" · "+describe(trim.error):"")+(text.isEmpty()?"":" · "+text));
             if(trim.timedOut){
-                finish.accept("pm trim-caches 5 dakikada bitmedi (zaman aşımı).\nKabuk testi başarılıydı ("+probeText+").");
+                finish.accept("pm trim-caches 5 dakikada bitmedi (zaman aşımı).\nKabuk testi başarılıydı ("+probeShort+").");
             } else if(trim.error!=null){
                 finish.accept("ADB işlemi başarısız: "+describe(trim.error));
             } else {
-                finish.accept("pm trim-caches çıkış kodu: "+trim.code+"\nSüre: "+sec+" sn"+(text.isEmpty()?"":"\n"+text));
+                finish.accept("pm trim-caches çıkış kodu: "+trim.code+"\nSüre: "+took+(text.isEmpty()?"":"\n"+text));
             }
         },"ultra-cache-cleaner").start();
     }

@@ -1,5 +1,10 @@
 # Sürüm Geçmişi
 
+## 5.1.3 — Rötuş (2026-11-06)
+- ADB önbellek süresi 1 saniyenin altındaysa "1 saniyeden kısa" yazılıyor ("0 sn" yerine).
+- İşlem günlüğünde kabuk testi yalnızca `uid=2000(shell)` olarak kaydediliyor.
+- CI artifact adı sürümden bağımsız: `ClearOS-debug-apk`.
+
 ## 5.1.2 — ADB önbellek tanılama (2026-11-06)
 - Önce zararsız `id` testi: Shizuku kabuğunun uçtan uca çalıştığı doğrulanır.
 - Bitiş artık sürecin sonlanmasıyla (waitFor) algılanıyor; stdout/stderr ayrı iş parçacıklarında okunuyor, stdin hemen kapatılıyor.
