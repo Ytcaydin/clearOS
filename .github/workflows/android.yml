@@ -37,6 +37,20 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
+      - name: Yazı tipleri (Doto, Space Grotesk, Space Mono · SIL OFL)
+        run: |
+          D=app/src/main/assets/fonts; mkdir -p "$D"
+          B=https://raw.githubusercontent.com/google/fonts/main/ofl
+          get() { curl -fsSL --retry 3 -o "$D/$2" "$B/$1" && echo "ok  $2" || echo "::warning::Yazı tipi indirilemedi: $1 (sistem yazı tipi kullanılacak)"; }
+          get 'doto/Doto%5BROND,wght%5D.ttf' Doto.ttf
+          get 'doto/OFL.txt' Doto-OFL.txt
+          get 'spacegrotesk/SpaceGrotesk%5Bwght%5D.ttf' SpaceGrotesk.ttf
+          get 'spacegrotesk/OFL.txt' SpaceGrotesk-OFL.txt
+          get 'spacemono/SpaceMono-Regular.ttf' SpaceMono-Regular.ttf
+          get 'spacemono/SpaceMono-Bold.ttf' SpaceMono-Bold.ttf
+          get 'spacemono/OFL.txt' SpaceMono-OFL.txt
+          ls -la "$D"
+
       - name: Sabit imza anahtarı (güncelleme olarak kurulabilsin)
         env:
           KEYSTORE_B64: ${{ secrets.CLEAROS_DEBUG_KEYSTORE }}

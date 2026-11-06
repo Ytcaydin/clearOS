@@ -44,8 +44,7 @@ public final class QuarantineActivity extends Activity {
         root.setOnApplyWindowInsetsListener((v,w)->{Insets b=w.getInsets(WindowInsets.Type.systemBars());
             root.setPadding(ModernUi.dp(this,17)+b.left,ModernUi.dp(this,17)+b.top,
                     ModernUi.dp(this,17)+b.right,b.bottom);return w;});setContentView(root);
-        root.addView(ModernUi.text(this,"Karantina",25,ModernUi.TEXT,true));
-        root.addView(ModernUi.muted(this,"Geri yükle veya gerçekten alan açmak için kalıcı sil",12),ModernUi.space(this,-1,-2,6));
+        root.addView(ModernUi.header(this,"Karantina","Geri yükle veya gerçekten alan açmak için kalıcı sil"));
         LinearLayout stat=ModernUi.card(this);root.addView(stat,ModernUi.space(this,-1,-2,16));
         summary=ModernUi.text(this,"Karantina okunuyor…",24,ModernUi.TEXT,true);stat.addView(summary);
         sub=ModernUi.muted(this,"",12);stat.addView(sub,ModernUi.space(this,-1,-2,6));

@@ -1,5 +1,12 @@
 # Sürüm Geçmişi
 
+## 5.1.0 — Nothing tarzı arayüz (2026-11-06)
+- **Görünüm:** Saf siyah zemin, beyaz metin, tek kırmızı vurgu (#D71921). Ekran başlıkları nokta-matris (Doto), etiketler büyük harf tek aralıklı (Space Mono), gövde Space Grotesk. Yazı tipleri CI'da indirilir (SIL OFL, lisanslar uygulama içinde); yoksa sistem yazı tipi.
+- **Ana sayfa:** Büyük "temizlenebilir" rakamı, noktalardan depolama çubuğu, Karantina / Boş alan kutuları, beyaz hap tarama butonu, çizgili hızlı işlemler listesi.
+- **Bileşenler:** Metin sembolleri yerine çizgi ikonlar; satır listeleri ayırıcı çizgili; birincil buton beyaz dolgu, ikincil çerçeveli; nokta halka grafik; kırmızı noktalı alt gezinme; geri butonlu başlık çubuğu.
+- **Ultra Mod:** Durum kartı (servis / izin / kurulum), önbellek işlemleri üstte, bağlantı kurulunca kurulum adımları gizli.
+- **Tema ve ikon:** Siyah pencere ve iletişim kutuları, beyaz onay kutuları; yeni nokta halkalı uygulama ikonu.
+
 ## 5.0.0-rc2.3 — Taramalar en yüksek hıza (2026-11-06)
 - **Ana tarama:** Dosya başına tek `lstat` (önceden symlink/klasör/dosya/boyut/tarih için 5 ayrı FUSE çağrısı); alt klasör yolları birleştirmeyle (klasör başına 3 `getCanonicalPath` kalktı); klasör listeleme ve kopya dosya özetleri (örnek + SHA-256) 2–6 iş parçacığında paralel. Eski tarayıcıyla 37.886 dosyalık ağaçta sonuçlar birebir aynı.
 - **Fotoğraf dedektifi:** Fotoğraf listesi depolamayı gezmek yerine Android medya dizininden (MediaStore) tek sorguyla, en yeniden eskiye; boyutlar dizinden geldiği için başlık okuma atlanıyor; 6 iş parçacığına kadar paralel çözümleme, bir grup çözülürken sonraki hazırlanıyor. Medya dizini yoksa eski klasör taraması devreye girer.

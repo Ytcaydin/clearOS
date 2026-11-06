@@ -1,11 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+  <!-- Nothing-inspired: pure black surfaces, white controls, one red accent used in code. -->
   <style name="Theme.ClearOS" parent="@android:style/Theme.Material.NoActionBar">
     <item name="android:fontFamily">sans</item>
-    <item name="android:windowBackground">#07111D</item>
-    <item name="android:colorAccent">#29D3BD</item>
-    <item name="android:statusBarColor">#07111D</item>
-    <item name="android:navigationBarColor">#07111D</item>
+    <item name="android:windowBackground">#000000</item>
+    <item name="android:colorBackground">#000000</item>
+    <item name="android:colorBackgroundFloating">#141414</item>
+    <item name="android:colorAccent">#FFFFFF</item>
+    <item name="android:colorControlNormal">#6B6B6B</item>
+    <item name="android:colorControlActivated">#FFFFFF</item>
+    <item name="android:textColorPrimary">#FFFFFF</item>
+    <item name="android:textColorSecondary">#A3A3A3</item>
+    <item name="android:statusBarColor">#000000</item>
+    <item name="android:navigationBarColor">#000000</item>
     <item name="android:windowLightStatusBar">false</item>
     <item name="android:windowLightNavigationBar">false</item>
     <item name="android:windowActionModeOverlay">true</item>

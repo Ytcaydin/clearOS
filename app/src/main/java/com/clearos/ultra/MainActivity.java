@@ -80,21 +80,25 @@ public final class MainActivity extends Activity {
         });
         setContentView(root);
         LinearLayout header=ModernUi.column(this);
-        header.setPadding(ModernUi.dp(this,21),ModernUi.dp(this,19),ModernUi.dp(this,21),ModernUi.dp(this,14));
-        title=ModernUi.text(this,"ClearOS Ultra",23,ModernUi.TEXT,true);header.addView(title);
-        header.addView(ModernUi.muted(this,"V5.0  ·  Çevrimdışı  ·  Güvenli temizlik",11),ModernUi.space(this,-1,-2,5));
+        header.setPadding(ModernUi.dp(this,22),ModernUi.dp(this,20),ModernUi.dp(this,22),ModernUi.dp(this,16));
+        title=ModernUi.pageTitle(this,"ClearOS");header.addView(title);
+        header.addView(ModernUi.label(this,"V5.1 · Çevrimdışı · Güvenli temizlik",10,ModernUi.FAINT),ModernUi.space(this,-1,-2,8));
         root.addView(header);
         scroll=new ScrollView(this);scroll.setFillViewport(false);scroll.setClipToPadding(false);
         content=ModernUi.column(this);content.setPadding(ModernUi.dp(this,18),0,ModernUi.dp(this,18),ModernUi.dp(this,24));
         scroll.addView(content);root.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
-        navigation=ModernUi.row(this);navigation.setBackgroundColor(ModernUi.PANEL);
-        navigation.setPadding(ModernUi.dp(this,5),ModernUi.dp(this,8),ModernUi.dp(this,5),ModernUi.dp(this,8));
+        navigation=ModernUi.row(this);
+        android.graphics.drawable.GradientDrawable navLine=new android.graphics.drawable.GradientDrawable();
+        navLine.setColor(ModernUi.BG);navLine.setStroke(ModernUi.dp(this,1),ModernUi.DIVIDER);
+        int o=-ModernUi.dp(this,2);
+        navigation.setBackground(new android.graphics.drawable.InsetDrawable(navLine,o,0,o,o));
+        navigation.setPadding(ModernUi.dp(this,4),ModernUi.dp(this,6),ModernUi.dp(this,4),ModernUi.dp(this,6));
         root.addView(navigation);
     }
     private void render() {
         if(content==null)return;
         int y=scroll.getScrollY();content.removeAllViews();
-        title.setText(new String[]{"ClearOS Ultra","Temizlik","Medya","Analiz","Araçlar"}[tab]);
+        title.setText(new String[]{"ClearOS","Temizlik","Medya","Analiz","Araçlar"}[tab]);
         if(tab==0)home();else if(tab==1)clean();else if(tab==2)media();else if(tab==3)analysis();else tools();
         nav();scroll.post(()->scroll.scrollTo(0,y));
     }
@@ -105,11 +109,13 @@ public final class MainActivity extends Activity {
         for(int i=0;i<names.length;i++) {
             final int to=i;boolean active=i==tab;
             LinearLayout tile=ModernUi.column(this);tile.setGravity(Gravity.CENTER);
-            if(active)tile.setBackground(ModernUi.shape(this,ModernUi.PANEL2,14));
-            tile.addView(new ModernUi.NavIcon(this,i,active),new LinearLayout.LayoutParams(ModernUi.dp(this,27),ModernUi.dp(this,27)));
-            TextView label=ModernUi.text(this,names[i],10,active?ModernUi.TEAL:ModernUi.MUTED,active);
-            label.setGravity(Gravity.CENTER);tile.addView(label,ModernUi.space(this,-1,-2,4));
-            navigation.addView(tile,new LinearLayout.LayoutParams(0,ModernUi.dp(this,60),1));
+            tile.addView(new ModernUi.NavIcon(this,i,active),new LinearLayout.LayoutParams(ModernUi.dp(this,26),ModernUi.dp(this,26)));
+            TextView label=ModernUi.label(this,names[i].equals("Ana Sayfa")?"Ana":names[i],9,active?ModernUi.TEXT:ModernUi.MUTED);
+            label.setLetterSpacing(.08f);label.setGravity(Gravity.CENTER);tile.addView(label,ModernUi.space(this,-1,-2,5));
+            View marker=ModernUi.dot(this,active?ModernUi.ACCENT:0x00000000,4);
+            LinearLayout.LayoutParams mp=(LinearLayout.LayoutParams)marker.getLayoutParams();mp.topMargin=ModernUi.dp(this,5);
+            tile.addView(marker,mp);
+            navigation.addView(tile,new LinearLayout.LayoutParams(0,ModernUi.dp(this,64),1));
             tile.setClickable(true);tile.setFocusable(true);
             tile.setContentDescription(names[i]+(active?", seçili sekme":" sekmesine git"));
             tile.setOnClickListener(x->change(to));
@@ -125,51 +131,71 @@ public final class MainActivity extends Activity {
     private long suggested() {long bytes=0;for(SafeScanner.Candidate c:candidates)if(c.suggested)bytes+=c.size;return bytes;}
     private long lastSuggested() {return getSharedPreferences("last_scan",0).getLong("suggested",0);}
     private int lastFound() {return getSharedPreferences("last_scan",0).getInt("found",0);}
-    private void statBox(LinearLayout row,String number,String label,int accent) {
+    private void statBox(LinearLayout row,String number,String label,int accent) {statBox(row,number,label);}
+    private void statBox(LinearLayout row,String number,String label) {
         LinearLayout box=ModernUi.card(this);LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(0,-2,1);
-        if(row.getChildCount()>0)p.leftMargin=ModernUi.dp(this,9);
-        row.addView(box,p);box.addView(ModernUi.text(this,number,21,accent,true));
-        box.addView(ModernUi.muted(this,label,11),ModernUi.space(this,-1,-2,8));
+        if(row.getChildCount()>0)p.leftMargin=ModernUi.dp(this,10);
+        row.addView(box,p);box.addView(ModernUi.label(this,label,10,ModernUi.MUTED));
+        box.addView(ModernUi.text(this,number,22,ModernUi.TEXT,true),ModernUi.space(this,-1,-2,10));
     }
     private void home() {
         long[] s=storage();long used=s[1],total=s[0];
-        LinearLayout disk=ModernUi.card(this);
-        disk.addView(ModernUi.muted(this,"DEPOLAMA GENEL BAKIŞ",11));
-        LinearLayout r=ModernUi.row(this);disk.addView(r,ModernUi.space(this,-1,-2,12));
         float percent=total==0?0:used/(float)total;
-        r.addView(new ModernUi.Donut(this,percent,String.format(Locale.getDefault(),"%%%d",Math.round(percent*100))),
-                new LinearLayout.LayoutParams(ModernUi.dp(this,138),ModernUi.dp(this,138)));
-        LinearLayout details=ModernUi.column(this);LinearLayout.LayoutParams dp=new LinearLayout.LayoutParams(0,-2,1);
-        dp.leftMargin=ModernUi.dp(this,18);r.addView(details,dp);
-        details.addView(ModernUi.muted(this,"Kullanılan alan",11));
-        details.addView(ModernUi.text(this,ModernUi.bytes(used),23,ModernUi.TEXT,true),ModernUi.space(this,-1,-2,7));
-        details.addView(ModernUi.text(this,ModernUi.bytes(s[2])+" boş",14,ModernUi.TEAL,true),ModernUi.space(this,-1,-2,7));
-        details.addView(ModernUi.muted(this,"Toplam "+ModernUi.bytes(total),11),ModernUi.space(this,-1,-2,7));
-        add(disk,10);
-        LinearLayout counters=ModernUi.row(this);
-        statBox(counters,ModernUi.bytes(candidates.isEmpty()?lastSuggested():suggested()),"Önerilen dosya boyutu",ModernUi.AMBER);
-        statBox(counters,quarantinedBytes<0?"…":ModernUi.bytes(quarantinedBytes),"Karantinada",ModernUi.BLUE);
-        add(counters,10);
+        // Hero: reclaimable size, big and light, with the red status dot.
+        LinearLayout hero=ModernUi.column(this);hero.setPadding(ModernUi.dp(this,2),0,0,0);
+        LinearLayout tag=ModernUi.row(this);
+        tag.addView(ModernUi.dot(this,ModernUi.ACCENT,8));
+        TextView tagText=ModernUi.label(this,"Temizlenebilir",11,ModernUi.MUTED);
+        LinearLayout.LayoutParams tp=new LinearLayout.LayoutParams(-2,-2);tp.leftMargin=ModernUi.dp(this,8);tag.addView(tagText,tp);
+        hero.addView(tag);
+        String reclaim=ModernUi.bytes(candidates.isEmpty()?lastSuggested():suggested());
+        int cut=reclaim.lastIndexOf(' ');
+        LinearLayout figure=ModernUi.row(this);figure.setGravity(Gravity.BOTTOM);
+        figure.addView(ModernUi.figure(this,cut>0?reclaim.substring(0,cut):reclaim,68,ModernUi.TEXT));
+        if(cut>0){TextView unit=ModernUi.figure(this,reclaim.substring(cut+1),24,ModernUi.MUTED);
+            LinearLayout.LayoutParams up=new LinearLayout.LayoutParams(-2,-2);up.leftMargin=ModernUi.dp(this,8);
+            up.bottomMargin=ModernUi.dp(this,8);figure.addView(unit,up);}
+        hero.addView(figure,ModernUi.space(this,-1,-2,10));
         long when=getSharedPreferences("last_scan",0).getLong("when",0);
         int found=candidates.isEmpty()?lastFound():candidates.size();
-        add(ModernUi.muted(this,when==0?"Henüz tamamlanan tarama yok":
-                "Son tarama: "+new java.text.SimpleDateFormat("dd.MM.yyyy HH:mm",Locale.getDefault()).format(new java.util.Date(when))+
-                " · "+found+" sonuç · Önerilmeyen dosyalar da incelemeye açıktır.",11),10);
-        section("Akıllı temizlik",scanning?"Tarama devam ediyor":"Dosyaları incelemeden silmiyoruz",25);
-        LinearLayout scan=ModernUi.card(this);
-        scan.addView(ModernUi.text(this,scanning?"Tarama devam ediyor":"Telefonunu analiz et",17,ModernUi.TEXT,true));
-        scan.addView(ModernUi.muted(this,scanning?scanned+" dosya tarandı · "+progress:
-                "Kopyaları, eski APK'ları ve erişilebilir büyük dosyaları bul.",12),ModernUi.space(this,-1,-2,7));
-        android.widget.Button btn=ModernUi.button(this,scanning?"Taramayı durdur":"Akıllı taramayı başlat",true);
-        scan.addView(btn,ModernUi.space(this,-1,48,15));
-        btn.setOnClickListener(v->{if(scanning)cancel.set(true);else startScan();});add(scan,12);
-        section("Hızlı işlemler","Sık kullandığın araçlar",23);
-        add(ModernUi.actionCard(this,"♻","Karantina yönetimi", "Geri yükle, seçerek sil, hata raporu",
-                ()->startActivity(new Intent(this,QuarantineActivity.class))),12);
-        add(ModernUi.actionCard(this,"▤","Depolama analizi", "Klasör haritası ve geçmiş",()->change(3)),9);
-        add(ModernUi.actionCard(this,"▣","Medya optimizasyonu", "Benzer fotoğraf, video ve mesajlaşma",()->change(2)),9);
+        hero.addView(ModernUi.label(this,when==0?"Henüz tamamlanan tarama yok":
+                "Son tarama "+new java.text.SimpleDateFormat("dd.MM · HH:mm",Locale.getDefault()).format(new java.util.Date(when))+
+                " · "+found+" sonuç",10,ModernUi.MUTED),ModernUi.space(this,-1,-2,12));
+        add(hero,14);
+        // Storage as a dot bar.
+        LinearLayout disk=ModernUi.column(this);disk.setPadding(ModernUi.dp(this,2),0,ModernUi.dp(this,2),0);
+        LinearLayout diskHead=ModernUi.row(this);
+        diskHead.addView(ModernUi.label(this,"Depolama",11,ModernUi.MUTED),new LinearLayout.LayoutParams(0,-2,1));
+        diskHead.addView(ModernUi.label(this,String.format(Locale.getDefault(),"%%%d · %s / %s",Math.round(percent*100),
+                ModernUi.bytes(used),ModernUi.bytes(total)),11,ModernUi.TEXT));
+        disk.addView(diskHead);
+        disk.addView(new ModernUi.DotBar(this,percent),ModernUi.space(this,-1,-2,12));
+        add(disk,26);
+        LinearLayout counters=ModernUi.row(this);
+        statBox(counters,quarantinedBytes<0?"…":ModernUi.bytes(quarantinedBytes),"Karantina");
+        statBox(counters,ModernUi.bytes(s[2]),"Boş alan");
+        add(counters,22);
+        if(scanning){
+            LinearLayout live=ModernUi.card(this);
+            LinearLayout lr=ModernUi.row(this);lr.addView(ModernUi.dot(this,ModernUi.ACCENT,8));
+            LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-2,-2);lp.leftMargin=ModernUi.dp(this,8);
+            lr.addView(ModernUi.label(this,"Dosyalar taranıyor",11,ModernUi.MUTED),lp);live.addView(lr);
+            live.addView(ModernUi.figure(this,String.format(Locale.getDefault(),"%,d",scanned),44,ModernUi.TEXT),ModernUi.space(this,-1,-2,10));
+            TextView where=ModernUi.label(this,progress,10,ModernUi.MUTED);where.setAllCaps(false);where.setSingleLine(true);
+            where.setEllipsize(android.text.TextUtils.TruncateAt.MIDDLE);live.addView(where,ModernUi.space(this,-1,-2,8));
+            add(live,20);
+        }
+        android.widget.Button btn=ModernUi.button(this,scanning?"Durdur":"Taramayı başlat",!scanning);
+        add(btn,scanning?12:22);btn.getLayoutParams().height=ModernUi.dp(this,54);
+        btn.setOnClickListener(v->{if(scanning)cancel.set(true);else startScan();});
+        if(!scanning)add(ModernUi.muted(this,"Dosyalar sen seçmeden silinmez; seçtiklerin önce karantinaya alınır.",12),10);
+        section("Hızlı işlemler",null,28);
+        add(ModernUi.actionCard(this,"♻","Karantina", "Geri yükle veya kalıcı sil",
+                ()->startActivity(new Intent(this,QuarantineActivity.class))),6);
+        add(ModernUi.actionCard(this,"▤","Depolama analizi", "Klasör haritası ve geçmiş",()->change(3)),0);
+        add(ModernUi.actionCard(this,"▣","Medya", "Benzer fotoğraf, video ve mesajlaşma",()->change(2)),0);
         if(!candidates.isEmpty())add(ModernUi.actionCard(this,"✓",""+candidates.size()+" tarama sonucu",
-                "Sonuçları incele ve dosya seç",()->change(1)),9);
+                "Sonuçları incele ve dosya seç",()->change(1)),0);
     }
     private boolean permitted() {return Environment.isExternalStorageManager();}
     private void requestPermission() {

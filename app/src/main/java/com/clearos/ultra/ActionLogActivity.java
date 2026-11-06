@@ -17,8 +17,7 @@ public final class ActionLogActivity extends Activity {
         root.setOnApplyWindowInsetsListener((v,w)->{Insets b=w.getInsets(WindowInsets.Type.systemBars());
             root.setPadding(ModernUi.dp(this,18)+b.left,ModernUi.dp(this,20)+b.top,
                     ModernUi.dp(this,18)+b.right,b.bottom);return w;});setContentView(root);
-        root.addView(ModernUi.text(this,"İşlem günlüğü",23,ModernUi.TEXT,true));
-        root.addView(ModernUi.muted(this,"Yalnızca telefonda tutulur. Dosya içerikleri kaydedilmez.",12),ModernUi.space(this,-1,-2,8));
+        root.addView(ModernUi.header(this,"İşlem günlüğü","Yalnızca telefonda tutulur. Dosya içerikleri kaydedilmez."));
         ScrollView scroll=new ScrollView(this);root.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
         LinearLayout log=ModernUi.card(this);String data=ActionLog.read(this);
         log.addView(ModernUi.text(this,data.isEmpty()?"Henüz kaydedilmiş işlem yok.":data.replace("\n","\n\n"),12,ModernUi.TEXT,false));

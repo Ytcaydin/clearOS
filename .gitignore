@@ -9,3 +9,6 @@ local.properties
 # Signing keys never go into this public repo
 *.keystore
 *.jks
+
+# Fonts are downloaded by CI (SIL OFL); local builds fall back to system fonts
+app/src/main/assets/fonts/

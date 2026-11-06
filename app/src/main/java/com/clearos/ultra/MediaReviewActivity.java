@@ -48,8 +48,7 @@ public final class MediaReviewActivity extends Activity {
             root.setPadding(ModernUi.dp(this,19)+bars.left,ModernUi.dp(this,18)+bars.top,ModernUi.dp(this,19)+bars.right,bars.bottom);return w;});
         setContentView(root);
         String heading=section.equals("compress")?"Medya sıkıştırma":section.equals("messenger")?"Mesajlaşma medyası":"Fotoğraf dedektifi";
-        root.addView(ModernUi.text(this,heading,23,ModernUi.TEXT,true));
-        root.addView(ModernUi.muted(this,"Dosyaların iznin olmadan silinmez. Sonuçlar yalnızca cihazında işlenir.",12),ModernUi.space(this,-1,-2,9));
+        root.addView(ModernUi.header(this,heading,"Dosyaların iznin olmadan silinmez. Sonuçlar yalnızca cihazında işlenir."));
         ScrollView scroll=new ScrollView(this);root.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
         items=ModernUi.column(this);items.setPadding(0,ModernUi.dp(this,18),0,ModernUi.dp(this,18));scroll.addView(items);
         if(section.equals("compress"))compression();

@@ -18,6 +18,7 @@ import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
+import android.widget.TextView;
 import java.io.File;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
@@ -45,8 +46,7 @@ public final class DeviceToolsActivity extends Activity {
         String heading=section.equals("ultra")?"Ultra Mod":section.equals("residue")?"Uygulama kalıntıları":
                 section.equals("settings")?"Otomasyon & güvenlik":
                 section.equals("diagnostics")?"Cihaz tanılaması":"Uygulama analizi";
-        root.addView(ModernUi.text(this,heading,23,ModernUi.TEXT,true));
-        root.addView(ModernUi.muted(this,"ClearOS Ultra 5.0 · Yerel, güvenli ve izinli işlemler",12),ModernUi.space(this,-1,-2,9));
+        root.addView(ModernUi.header(this,heading,"Yerel, güvenli ve izinli işlemler"));
         ScrollView scroll=new ScrollView(this);root.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
         content=ModernUi.column(this);content.setPadding(0,ModernUi.dp(this,14),0,ModernUi.dp(this,25));scroll.addView(content);
         switch(section){case "ultra":ultra();break;case "residue":residue();break;
@@ -170,44 +170,72 @@ public final class DeviceToolsActivity extends Activity {
             });
         });
     }
+    private boolean showSetup=false;
     private void ultra(){
         boolean running=access.running(),approved=access.approved();
-        add(ModernUi.section(this,"Shizuku / Porter bağlantısı",approved?"Yetkilendirme hazır":
-                running?"Servis çalışıyor · ClearOS izni gerekiyor":"Servis çalışmıyor · Normal mod aktif"),2);
         LinearLayout status=ModernUi.card(this);
-        status.addView(ModernUi.text(this,approved?"● Bağlandı":running?"◉ İzin bekleniyor":"○ Bağlı değil",19,
-                approved?ModernUi.TEAL:ModernUi.AMBER,true));
-        status.addView(ModernUi.muted(this,"Hiçbir zaman root veya gelişigüzel shell komutu kullanılmaz.",12),ModernUi.space(this,-1,-2,8));
+        LinearLayout head=ModernUi.row(this);
+        head.addView(ModernUi.dot(this,approved?ModernUi.TEXT:ModernUi.ACCENT,10));
+        LinearLayout.LayoutParams hp=new LinearLayout.LayoutParams(0,-2,1);hp.leftMargin=ModernUi.dp(this,10);
+        TextView state=ModernUi.label(this,approved?"Bağlandı":running?"İzin bekleniyor":"Bağlı değil",13,
+                approved?ModernUi.TEXT:ModernUi.ACCENT_TEXT);state.setTypeface(ModernUi.monoFont(this,true));
+        head.addView(state,hp);
+        head.addView(ModernUi.label(this,"Shizuku · ADB",10,ModernUi.MUTED));
+        status.addView(head);
+        status.addView(ModernUi.muted(this,"Yalnızca önbellek daraltma komutu çalışır. Root veya serbest kabuk komutu kullanılmaz.",13),
+                ModernUi.space(this,-1,-2,12));
+        LinearLayout facts=ModernUi.row(this);facts.setGravity(android.view.Gravity.TOP);
+        fact(facts,"Servis",running?"Çalışıyor":"Kapalı");
+        fact(facts,"İzin",approved?"Verildi":"Yok");
+        fact(facts,"Kurulum",approved?"Tamam":"Gerekli");
+        status.addView(facts,ModernUi.space(this,-1,-2,16));
         add(status,16);
-        add(ModernUi.section(this,"Kurulum adımları","Shizuku uygulaması telefonda bulunmalı"),22);
-        add(ModernUi.actionCard(this,"1","Shizuku'yu aç","Uygulamayı telefondan başlat ve servis durumunu kontrol et",()->{
-            Intent intent=getPackageManager().getLaunchIntentForPackage("moe.shizuku.privileged.api");
-            if(intent!=null)startActivity(intent);else alert("Shizuku bulunamadı","Önce Shizuku'yu kurmalısın.");
-        }),12);
-        add(ModernUi.actionCard(this,"2","Kablosuz hata ayıklama","Geliştirici seçeneklerinde aç, eşleştir ve Shizuku servisini başlat",()->{
-            try{startActivity(new Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS));}
-            catch(Exception e){alert("Ayar açılamadı","Geliştirici seçeneklerini elle aç.");}
-        }),8);
-        add(ModernUi.actionCard(this,"3","ClearOS'a izin ver","Shizuku bağlantısı kurulduktan sonra uygulama iznini iste",()->{
-            if(!access.running())alert("Önce Shizuku'yu başlat","Servis henüz çalışmıyor.");
-            else {access.request();alert("İzin istendi","Shizuku onay ekranını kontrol et, ardından tekrar bu sayfaya dön.");}
-        }),8);
-        add(ModernUi.actionCard(this,"4","Bağlantıyı kontrol et","Servis ve uygulama iznini yeniden denetle",this::build),8);
-        add(ModernUi.section(this,"Önbellek işlemleri","Android'in izin verdiği kapsamla sınırlıdır"),24);
-        add(ModernUi.actionCard(this,"◉","Android sistem ekranı","Kullanıcı onayıyla harici önbellek temizleme",()->{
+        add(ModernUi.section(this,"Önbellek",null),26);
+        add(ModernUi.actionCard(this,"◉","Android sistem ekranı","Harici önbellek · senin onayınla",()->{
             if(!Environment.isExternalStorageManager()) {alert("İzin gerekli","Önce Tüm dosyalara erişim izni ver.");return;}
             systemCacheFreeBefore=freeBytes();
             try{startActivityForResult(new Intent(StorageManager.ACTION_CLEAR_APP_CACHE),REQ_SYSTEM_CACHE);}
             catch(Exception e){systemCacheFreeBefore=-1;
                 ActionLog.add(this,"Sistem önbellek ekranı","Açılamadı: "+e.getClass().getSimpleName());
                 alert("Desteklenmiyor","Telefon bu ekranı sunmuyor.");}
-        }),12);
-        add(ModernUi.actionCard(this,"⚡","ADB önbelleğini daralt","pm trim-caches 999G; sonuç cihazdan cihaza değişebilir",()->{
+        }),0);
+        add(ModernUi.actionCard(this,"⚡","ADB önbelleğini daralt","Tüm uygulamaların önbelleği · ~1 dk",()->{
             if(!access.approved()){alert("İzin yok","Önce Shizuku servisi ve uygulama izni gerekli.");return;}
             new AlertDialog.Builder(this).setTitle("ADB önbellek temizliği")
                     .setMessage("Android'in desteklediği önbellekleri azaltmayı dener. Bazı sistemler komutu reddedebilir. Devam edilsin mi?")
                     .setNegativeButton("Vazgeç",null).setPositiveButton("Çalıştır",(d,w)->runAdbTrim()).show();
-        }),9);
+        }),0);
+        if(approved && !showSetup){
+            android.widget.Button more=ModernUi.button(this,"Kurulum adımlarını göster",false);add(more,28);
+            more.setOnClickListener(v->{showSetup=true;build();});
+            return;
+        }
+        add(ModernUi.section(this,"Kurulum adımları","Shizuku uygulaması telefonda bulunmalı"),28);
+        add(ModernUi.actionCard(this,"1","Shizuku'yu aç","Uygulamayı telefondan başlat ve servis durumunu kontrol et",()->{
+            Intent intent=getPackageManager().getLaunchIntentForPackage("moe.shizuku.privileged.api");
+            if(intent!=null)startActivity(intent);else alert("Shizuku bulunamadı","Önce Shizuku'yu kurmalısın.");
+        }),6);
+        add(ModernUi.actionCard(this,"2","Kablosuz hata ayıklama","Geliştirici seçeneklerinde aç, eşleştir ve Shizuku servisini başlat",()->{
+            try{startActivity(new Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS));}
+            catch(Exception e){alert("Ayar açılamadı","Geliştirici seçeneklerini elle aç.");}
+        }),0);
+        add(ModernUi.actionCard(this,"3","ClearOS'a izin ver","Shizuku bağlantısı kurulduktan sonra uygulama iznini iste",()->{
+            if(!access.running())alert("Önce Shizuku'yu başlat","Servis henüz çalışmıyor.");
+            else {access.request();alert("İzin istendi","Shizuku onay ekranını kontrol et, ardından tekrar bu sayfaya dön.");}
+        }),0);
+        add(ModernUi.actionCard(this,"4","Bağlantıyı kontrol et","Servis ve uygulama iznini yeniden denetle",this::build),0);
+    }
+    private void fact(LinearLayout row,String key,String value){
+        LinearLayout cell=ModernUi.column(this);
+        android.graphics.drawable.GradientDrawable top=new android.graphics.drawable.GradientDrawable();
+        top.setColor(0);top.setStroke(ModernUi.dp(this,1),ModernUi.BORDER);int o=-ModernUi.dp(this,2);
+        cell.setBackground(new android.graphics.drawable.InsetDrawable(top,o,0,o,o));
+        cell.setPadding(0,ModernUi.dp(this,10),ModernUi.dp(this,6),0);
+        cell.addView(ModernUi.label(this,key,9,ModernUi.MUTED));
+        cell.addView(ModernUi.text(this,value,13,ModernUi.TEXT,false),ModernUi.space(this,-1,-2,5));
+        LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(0,-2,1);
+        if(row.getChildCount()>0)p.leftMargin=ModernUi.dp(this,8);
+        row.addView(cell,p);
     }
     /** Read-only on-device checks: no shell commands, no file changes and no telemetry. */
     private void diagnostics(){
@@ -240,9 +268,13 @@ public final class DeviceToolsActivity extends Activity {
     }
     private void diagnosticCard(String title,boolean ok,String explanation){
         LinearLayout card=ModernUi.card(this);
-        card.addView(ModernUi.text(this,(ok?"✓  ":"!  ")+title,15,
-                ok?ModernUi.TEAL:ModernUi.AMBER,true));
-        card.addView(ModernUi.muted(this,explanation,12),ModernUi.space(this,-1,-2,7));
+        LinearLayout head=ModernUi.row(this);
+        head.addView(ModernUi.text(this,title,15,ModernUi.TEXT,true),new LinearLayout.LayoutParams(0,-2,1));
+        head.addView(ModernUi.dot(this,ok?ModernUi.TEXT:ModernUi.ACCENT,8));
+        LinearLayout.LayoutParams sp=new LinearLayout.LayoutParams(-2,-2);sp.leftMargin=ModernUi.dp(this,8);
+        head.addView(ModernUi.label(this,ok?"Hazır":"Gerekli",10,ok?ModernUi.TEXT:ModernUi.ACCENT_TEXT),sp);
+        card.addView(head);
+        card.addView(ModernUi.muted(this,explanation,12),ModernUi.space(this,-1,-2,8));
         add(card,8);
     }
     private void settings(){
