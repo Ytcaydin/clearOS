@@ -85,7 +85,8 @@ public final class DeviceToolsActivity extends Activity {
             if(waiting.isShowing())try{waiting.dismiss();}catch(RuntimeException ignored){}
             String clean=result==null?"":result.trim();
             boolean ok=clean.startsWith("pm trim-caches çıkış kodu: 0");
-            String report=(ok?"Android önbellek daraltmayı tamamladı.\n\n":clean+"\n\n")+freedText(before,freeBytes());
+            // Only report freed space when the command actually ran; on errors it would mislead.
+            String report=ok?"Android önbellek daraltmayı tamamladı.\n\n"+freedText(before,freeBytes()):clean;
             ActionLog.add(this,"ADB önbellek",report.replace('\n',' '));
             alert(ok?"Tamamlandı":"İşlem sonucu",report);
         });

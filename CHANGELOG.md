@@ -1,5 +1,9 @@
 # Sürüm Geçmişi
 
+## 5.1.1 — ADB önbellek temizliği düzeltmesi (2026-11-06)
+- **Düzeltme:** `pm trim-caches` artık doğrudan Shizuku'nun kabuk sürecinde çalışıyor (`Shizuku.newProcess`). Ayrı UserService süreci bazı telefonlarda (ör. Nothing Phone 2a, Shizuku 13.5) hiç başlamıyor ve 20 sn zaman aşımı veriyordu; o yol artık yalnızca yedek.
+- Hata durumunda "alan açılmadı" ifadesi gösterilmiyor; yalnızca hatanın kendisi.
+
 ## 5.1.0 — Nothing tarzı arayüz (2026-11-06)
 - **Görünüm:** Saf siyah zemin, beyaz metin, tek kırmızı vurgu (#D71921). Ekran başlıkları nokta-matris (Doto), etiketler büyük harf tek aralıklı (Space Mono), gövde Space Grotesk. Yazı tipleri CI'da indirilir (SIL OFL, lisanslar uygulama içinde); yoksa sistem yazı tipi.
 - **Ana sayfa:** Büyük "temizlenebilir" rakamı, noktalardan depolama çubuğu, Karantina / Boş alan kutuları, beyaz hap tarama butonu, çizgili hızlı işlemler listesi.
