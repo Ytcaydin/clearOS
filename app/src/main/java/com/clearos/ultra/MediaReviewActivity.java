@@ -230,7 +230,7 @@ public final class MediaReviewActivity extends Activity {
                         p.leftMargin=ModernUi.dp(this,12);row.addView(text,p);
                         text.addView(ModernUi.text(this,photo.file.getName(),12,ModernUi.TEXT,true));
                         text.addView(ModernUi.muted(this,ModernUi.bytes(photo.size),11),ModernUi.space(this,-1,-2,5));
-                        row.setOnClickListener(v->message(photo.file.getName(),photo.file.getAbsolutePath()));add(row,8);
+                        row.setOnClickListener(x->message(photo.file.getName(),photo.file.getAbsolutePath()));add(row,8);
                     }
                     add(ModernUi.section(this,"Büyük dosyalar","Salt okunur inceleme · dosyalara dokunulmaz"),22);
                     for(MessengerInspector.Item item:report.large){
