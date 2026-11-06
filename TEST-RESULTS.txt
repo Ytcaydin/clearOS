@@ -1,0 +1,20 @@
+ClearOS Ultra 5.0.0 RC1 — local validation 2026-11-06
+
+JDK portable tests:
+PASS ScannerSelfTest — duplicate hash verification, categories and protected directories
+PASS UltraCoreSelfTest — quarantine, collision and core logic
+PASS QuarantineRegressionTest — per-volume quarantine, restore, purge and exclusions
+PASS BatchPurgeSelfTest — batch deletion and forged/stale entry rejection
+PASS V5RecoverySelfTest — new-name restore, no overwrite, progress callback, folder labels
+
+Parse-only source check: PASS (24 Android Java source files)
+Portable quality check: PASS (4 XML files, manifest privacy, build metadata, CI and recovery code)
+
+NOT PERFORMED:
+- Android Gradle Plugin compilation / APK generation (SDK not installed here)
+- Running this V5 code on a real Android phone
+- Android 11–16 instrumented tests, UI accessibility, Shizuku binder integration
+- Media3 codec support and sustained performance on 100,000+ files
+- Power consumption and thermal profile measurement
+
+No file deletion on the user's phone was attempted; all regression tests use temporary test directories.
