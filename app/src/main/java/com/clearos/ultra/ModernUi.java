@@ -58,7 +58,9 @@ public final class ModernUi {
         Button b=new Button(c);b.setText(name);b.setAllCaps(false);
         b.setTextSize(13);b.setTypeface(Typeface.create("sans-serif-medium",Typeface.BOLD));
         b.setTextColor(primary?BLACK:TEXT);b.setBackground(shape(c,primary?TEAL:PANEL2,14));
-        b.setStateListAnimator(null);b.setPadding(dp(c,9),0,dp(c,9),0);b.setMinHeight(0);b.setMinimumHeight(0);
+        b.setStateListAnimator(null);b.setPadding(dp(c,9),0,dp(c,9),0);
+        // 44dp floor: wrap-content buttons (e.g. Taramayı durdur) were text-height only; also a usable touch target.
+        b.setMinHeight(dp(c,44));b.setMinimumHeight(dp(c,44));
         return b;
     }
     public static LinearLayout section(Activity c,String title,String subtitle) {

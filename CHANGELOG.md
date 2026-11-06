@@ -1,5 +1,10 @@
 # Sürüm Geçmişi
 
+## 5.0.0-rc2.2 — Fotoğraf dedektifi hızlandırma (2026-11-06)
+- **Hız:** Fotoğraflar 60'lık gruplar halinde paralel (çekirdek sayısı − 1, en fazla 4 iş parçacığı) çözülüyor; sonuçlar tarama sırasıyla birleştiriliyor, çıktı değişmiyor.
+- **Hız:** Bulanıklık ve benzerlik ölçümü `getPixel` yerine tek `getPixels` okumasıyla (fotoğraf başına ~130 bin JNI çağrısı → 2).
+- **Arayüz:** Butonlara 44 dp en küçük yükseklik; "Taramayı durdur" ve fotoğraf sayfası butonları artık ince görünmüyor.
+
 ## 5.0.0-rc2.1 — Önbellek işlemleri geri bildirimi (2026-11-06)
 - **ADB önbelleğini daralt:** "Çalıştır"dan sonra anında ilerleme penceresi (servis başlatılıyor → önbellekler daraltılıyor); 20 sn bağlantı ve 2 dk toplam zaman aşımı; servis kapanırsa hata mesajı. Önceden servis bağlanamazsa ekran sessiz kalıyordu.
 - **Sonuç:** Öncesi/sonrası boş alan farkı gösteriliyor ("Açılan alan: yaklaşık X"); `pm` mutlak yolla çalıştırılıyor.
