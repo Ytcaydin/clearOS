@@ -110,7 +110,7 @@ public class MainActivity extends Activity {
 
     private Button button(String caption, int color) {
         Button b = new Button(this);
-        b.setText(caption); b.setTextAllCaps(false);
+        b.setText(caption); b.setAllCaps(false);
         b.setTextColor(color == ACCENT ? BG : FG);
         b.setTextSize(12); b.setTypeface(Typeface.DEFAULT,Typeface.BOLD);
         b.setPadding(dp(7),dp(2),dp(7),dp(2));
