@@ -50,14 +50,27 @@ public final class QuarantineManager {
 
     /** Restore many entries reading each volume's index once. Returns restored entry ids. */
     public java.util.Set<String> restoreBatch(List<TrashStore.Entry> entries) {
+        return restoreBatch(entries,false,null);
+    }
+
+    /** Batch restore with optional rename-on-conflict and cross-volume progress (completed, total). */
+    public java.util.Set<String> restoreBatch(List<TrashStore.Entry> entries,boolean renameConflicts,
+                                              TrashStore.PurgeProgress progress) {
+        final int total=entries.size();
+        final int[] completed={0};
         java.util.Set<String> restored=new java.util.HashSet<>();
         List<TrashStore.Entry> pending=new ArrayList<>(entries);
         for (File root:roots) {
             if (pending.isEmpty()) break;
-            java.util.Set<String> done=store(root).restoreBatch(pending);
+            java.util.Set<String> done=store(root).restoreBatch(pending,renameConflicts,(n,ignored)->{
+                completed[0]++;
+                if (progress!=null) progress.onProcessed(Math.min(completed[0],total),total);
+            });
             restored.addAll(done);
             pending.removeIf(e->e==null||done.contains(e.id));
         }
+        // Unmatched/unmounted entries still count as processed so the UI reaches 100%.
+        if (progress!=null && completed[0]<total) progress.onProcessed(total,total);
         return restored;
     }
 
@@ -66,8 +79,21 @@ public final class QuarantineManager {
         return false;
     }
 
-    /** Group by volume; each volume is indexed only once for a batch. */
+    public File restoreWithNewName(TrashStore.Entry entry) {
+        for(File root:roots) {
+            File restored=store(root).restoreWithNewName(entry);
+            if(restored!=null)return restored;
+        }
+        return null;
+    }
+
     public List<TrashStore.PurgeResult> purgeBatch(List<TrashStore.Entry> entries) {
+        return purgeBatch(entries,null);
+    }
+
+    /** Group by volume; each volume is indexed only once for a batch. */
+    public List<TrashStore.PurgeResult> purgeBatch(List<TrashStore.Entry> entries,
+                                                  TrashStore.PurgeProgress progress) {
         Map<File,List<TrashStore.Entry>> perVolume=new HashMap<>();
         for (TrashStore.Entry entry:entries) {
             boolean accepted=false;
@@ -84,11 +110,19 @@ public final class QuarantineManager {
             if(!accepted)perVolume.computeIfAbsent(null,k->new ArrayList<>()).add(entry);
         }
         ArrayList<TrashStore.PurgeResult> results=new ArrayList<>();
+        final int[] completed={0};
         for(Map.Entry<File,List<TrashStore.Entry>> volume:perVolume.entrySet()) {
             if(volume.getKey()==null) {
-                for(TrashStore.Entry e:volume.getValue())
+                for(TrashStore.Entry e:volume.getValue()) {
                     results.add(new TrashStore.PurgeResult(e,false,"Karantina birimi bağlı değil"));
-            } else results.addAll(store(volume.getKey()).purgeBatch(volume.getValue()));
+                    completed[0]++;
+                    if(progress!=null) progress.onProcessed(completed[0],entries.size());
+                }
+            } else results.addAll(store(volume.getKey()).purgeBatch(volume.getValue(),
+                    (processed,volumeCount)->{
+                        completed[0]++;
+                        if(progress!=null) progress.onProcessed(completed[0],entries.size());
+                    }));
         }
         return results;
     }

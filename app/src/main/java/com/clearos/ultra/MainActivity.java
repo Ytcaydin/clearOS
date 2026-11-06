@@ -13,6 +13,7 @@ import android.provider.Settings;
 import android.view.Gravity;
 import android.view.View;
 import android.view.WindowInsets;
+import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.HorizontalScrollView;
 import android.widget.LinearLayout;
@@ -31,14 +32,14 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-/** V4 main experience: a real tabbed dashboard, controlled review and offline scans. */
+/** V5 main experience: a real tabbed dashboard, controlled review and offline scans. */
 public final class MainActivity extends Activity {
     private final ExecutorService io=Executors.newSingleThreadExecutor();
     private final AtomicBoolean cancel=new AtomicBoolean(false);
     private final Set<String> picked=new HashSet<>();
     private List<SafeScanner.Candidate> candidates=new ArrayList<>();
     private SafeScanner.Type filter=null;
-    private int tab=0, pageSize=70, generation=0;
+    private int tab=0, pageSize=70, mapPage=12, generation=0;
     private boolean scanning=false;
     private long scanned=0;
     private String progress="Hazır";
@@ -81,7 +82,7 @@ public final class MainActivity extends Activity {
         LinearLayout header=ModernUi.column(this);
         header.setPadding(ModernUi.dp(this,21),ModernUi.dp(this,19),ModernUi.dp(this,21),ModernUi.dp(this,14));
         title=ModernUi.text(this,"ClearOS Ultra",23,ModernUi.TEXT,true);header.addView(title);
-        header.addView(ModernUi.muted(this,"V4.0  ·  Çevrimdışı  ·  Güvenli temizlik",11),ModernUi.space(this,-1,-2,5));
+        header.addView(ModernUi.muted(this,"V5.0  ·  Çevrimdışı  ·  Güvenli temizlik",11),ModernUi.space(this,-1,-2,5));
         root.addView(header);
         scroll=new ScrollView(this);scroll.setFillViewport(false);scroll.setClipToPadding(false);
         content=ModernUi.column(this);content.setPadding(ModernUi.dp(this,18),0,ModernUi.dp(this,18),ModernUi.dp(this,24));
@@ -144,9 +145,14 @@ public final class MainActivity extends Activity {
         details.addView(ModernUi.muted(this,"Toplam "+ModernUi.bytes(total),11),ModernUi.space(this,-1,-2,7));
         add(disk,10);
         LinearLayout counters=ModernUi.row(this);
-        statBox(counters,ModernUi.bytes(candidates.isEmpty()?lastSuggested():suggested()),"Tarama önerisi",ModernUi.AMBER);
+        statBox(counters,ModernUi.bytes(candidates.isEmpty()?lastSuggested():suggested()),"Önerilen dosya boyutu",ModernUi.AMBER);
         statBox(counters,quarantinedBytes<0?"…":ModernUi.bytes(quarantinedBytes),"Karantinada",ModernUi.BLUE);
         add(counters,10);
+        long when=getSharedPreferences("last_scan",0).getLong("when",0);
+        int found=candidates.isEmpty()?lastFound():candidates.size();
+        add(ModernUi.muted(this,when==0?"Henüz tamamlanan tarama yok":
+                "Son tarama: "+new java.text.SimpleDateFormat("dd.MM.yyyy HH:mm",Locale.getDefault()).format(new java.util.Date(when))+
+                " · "+found+" sonuç · Önerilmeyen dosyalar da incelemeye açıktır.",11),10);
         section("Akıllı temizlik",scanning?"Tarama devam ediyor":"Dosyaları incelemeden silmiyoruz",25);
         LinearLayout scan=ModernUi.card(this);
         scan.addView(ModernUi.text(this,scanning?"Tarama devam ediyor":"Telefonunu analiz et",17,ModernUi.TEXT,true));
@@ -196,6 +202,7 @@ public final class MainActivity extends Activity {
                             .putLong("suggested",result.suggestedBytes).putLong("visited",result.visitedFiles)
                             .putLong("when",System.currentTimeMillis()).apply();
                     saveFolderMap(result.folderBytes);
+                    mapPage=12;
                     try{StorageHistory.record(this);}catch(Exception ignored){}
                     tab=1;scroll.scrollTo(0,0);
                 } else progress="Tarama durduruldu";
@@ -215,8 +222,9 @@ public final class MainActivity extends Activity {
         getSharedPreferences("folder_map",0).edit().putString("json",arr.toString()).apply();
     }
     private void clean() {
-        section("Temizlik merkezi",candidates.isEmpty()?"Son tarama: "+lastFound()+" bulgu · Yeni tarama gerekli":
-                candidates.size()+" dosya bulundu · "+ModernUi.bytes(suggested())+" öneri",7);
+        section("Temizlik merkezi",candidates.isEmpty()?"Son tarama: "+lastFound()+" sonuç · Güncel liste için tekrar tara":
+                candidates.size()+" dosya bulundu · "+ModernUi.bytes(suggested())+
+                " otomatik öneri · Diğerleri inceleme gerektirir",7);
         LinearLayout actions=ModernUi.row(this);add(actions,12);
         android.widget.Button scan=ModernUi.button(this,scanning?"Durdur":"Yeniden tara",true);
         actions.addView(scan,new LinearLayout.LayoutParams(0,ModernUi.dp(this,46),1));
@@ -312,8 +320,26 @@ public final class MainActivity extends Activity {
     }
     private void media() {
         section("Medya merkezi","Fotoğraf ve videoların kontrolü sende",7);
+        int videoCount=0, screenshotCount=0;
+        long videoBytes=0, screenshotBytes=0;
+        for(SafeScanner.Candidate candidate:candidates) {
+            String n=candidate.file.getName().toLowerCase(Locale.ROOT);
+            if(candidate.type==SafeScanner.Type.LARGE &&
+                    (n.endsWith(".mp4")||n.endsWith(".mov")||n.endsWith(".mkv")||n.endsWith(".webm"))) {
+                videoCount++;videoBytes+=candidate.size;
+            }
+            if(candidate.type==SafeScanner.Type.SCREENSHOT) {screenshotCount++;screenshotBytes+=candidate.size;}
+        }
+        LinearLayout counts=ModernUi.row(this);
+        statBox(counts,candidates.isEmpty()?"—":ModernUi.bytes(videoBytes),"Büyük video adayları · "+videoCount,ModernUi.BLUE);
+        statBox(counts,candidates.isEmpty()?"—":ModernUi.bytes(screenshotBytes),"Ekran görüntüleri · "+screenshotCount,ModernUi.TEAL);
+        add(counts,13);
+        add(ModernUi.muted(this,candidates.isEmpty()?"Bu özet için önce Akıllı Tarama çalıştır.":
+                "Bu sayılar son taramadaki inceleme adaylarıdır; tüm galeri boyutu değildir.",11),9);
+        add(ModernUi.actionCard(this,"▤","Büyük dosyaları incele","Son taramanın büyük dosyalarını filtrele",
+                ()->{filter=SafeScanner.Type.LARGE;change(1);}),17);
         add(ModernUi.actionCard(this,"▣","Benzer / bulanık fotoğraflar","Görüntü karşılaştırması · Otomatik silme yok",
-                ()->startActivity(new Intent(this,MediaReviewActivity.class).putExtra("section","photos"))),16);
+                ()->startActivity(new Intent(this,MediaReviewActivity.class).putExtra("section","photos"))),9);
         add(ModernUi.actionCard(this,"▸","Fotoğraf ve video sıkıştırma","Orijinali koruyarak daha küçük kopya üret",
                 ()->startActivity(new Intent(this,MediaReviewActivity.class).putExtra("section","compress"))),9);
         add(ModernUi.actionCard(this,"◉","WhatsApp ve Telegram medyası","Erişilebilir fotoğraf, video ve belgeler",
@@ -331,18 +357,34 @@ public final class MainActivity extends Activity {
             org.json.JSONArray folders=new org.json.JSONArray(json);
             if(folders.length()==0)add(ModernUi.muted(this,"Klasör haritası için önce tarama yap.",13),14);
             long biggest=folders.length()>0?folders.getJSONObject(0).optLong("bytes",1):1;
-            for(int i=0;i<Math.min(folders.length(),25);i++){
+            for(int i=0;i<Math.min(folders.length(),mapPage);i++){
                 org.json.JSONObject f=folders.optJSONObject(i);if(f==null)continue;
                 LinearLayout c=ModernUi.card(this);
-                TextView name=ModernUi.text(this,f.optString("path"),12,ModernUi.TEXT,true);
+                TextView name=ModernUi.text(this,DisplayPaths.label(f.optString("path")),12,ModernUi.TEXT,true);
                 name.setSingleLine(true);name.setEllipsize(android.text.TextUtils.TruncateAt.MIDDLE);
                 c.addView(name);c.addView(ModernUi.muted(this,ModernUi.bytes(f.optLong("bytes")),11),ModernUi.space(this,-1,-2,6));
                 c.addView(ModernUi.progress(this,(int)(1000.0*f.optLong("bytes")/Math.max(1,biggest))),ModernUi.space(this,-1,7,10));add(c,8);
             }
+            if(folders.length()>mapPage){
+                Button more=ModernUi.button(this,"Sonraki klasörleri göster ("+(folders.length()-mapPage)+" kaldı)",false);
+                add(more,10);more.setOnClickListener(v->{mapPage+=12;render();});
+            }
         }catch(Exception ex){add(ModernUi.muted(this,"Harita verisi okunamadı; yeniden tara.",12),12);}
         section("Depolama geçmişi","Günlük yerel ölçümler · 365 güne kadar saklanır",24);
-        List<StorageHistory.Reading> history=StorageHistory.list(this);
-        if(history.size()<2)add(ModernUi.muted(this,"En az iki farklı gün için ölçüm gerekli.",12),12);
+        LinearLayout period=ModernUi.row(this);add(period,12);
+        Button week=ModernUi.button(this,"Son 7 gün",false);
+        Button month=ModernUi.button(this,"Son 30 gün",false);
+        period.addView(week,new LinearLayout.LayoutParams(0,ModernUi.dp(this,43),1));
+        LinearLayout.LayoutParams gap=new LinearLayout.LayoutParams(0,ModernUi.dp(this,43),1);
+        gap.leftMargin=ModernUi.dp(this,9);period.addView(month,gap);
+        week.setOnClickListener(v->{getPreferences(0).edit().putInt("trend_days",7).apply();render();});
+        month.setOnClickListener(v->{getPreferences(0).edit().putInt("trend_days",30).apply();render();});
+        int days=getPreferences(0).getInt("trend_days",30);
+        List<StorageHistory.Reading> history=new ArrayList<>();
+        long today=System.currentTimeMillis()/86400000L;
+        for(StorageHistory.Reading r:StorageHistory.list(this))if(r.day>=today-days+1 && r.day<=today)history.add(r);
+        add(ModernUi.muted(this,"Gösterilen dönem: Son "+days+" gün",11),8);
+        if(history.size()<2)add(ModernUi.muted(this,"Bu dönemde grafik için en az iki farklı günlük ölçüm gerekli.",12),12);
         else{
             LinearLayout card=ModernUi.card(this);
             card.addView(new ModernUi.Trend(this,history),ModernUi.space(this,-1,165,3));

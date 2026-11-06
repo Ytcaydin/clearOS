@@ -124,15 +124,27 @@ public final class TrashStore {
      * Returns the ids that were restored.
      */
     public synchronized java.util.Set<String> restoreBatch(List<Entry> requested) {
+        return restoreBatch(requested,false,null);
+    }
+    /**
+     * @param renameConflicts on a name collision restore beside the original as "name (recovered N)"
+     * @param handled called once per entry that belongs to THIS volume (completed count, -1)
+     */
+    public synchronized java.util.Set<String> restoreBatch(List<Entry> requested,boolean renameConflicts,
+                                                          PurgeProgress handled) {
         Map<String,Entry> current=new HashMap<>();
         for (Entry item:list()) current.put(item.id,item);
         java.util.Set<String> restored=new java.util.HashSet<>();
+        int matched=0;
         for (Entry supplied:requested) {
             if (supplied==null) continue;
             Entry e=current.get(supplied.id);
             if (e==null || !e.original.equals(supplied.original) || !e.payload.equals(supplied.payload)) continue;
             current.remove(e.id); // consume only on a verified match; duplicates then no-op
-            if (restoreVerified(e)) restored.add(e.id);
+            boolean ok=restoreVerified(e) || (renameConflicts && restoreWithNewNameVerified(e)!=null);
+            if (ok) restored.add(e.id);
+            matched++;
+            if (handled!=null) handled.onProcessed(matched,-1);
         }
         return restored;
     }
@@ -141,10 +153,37 @@ public final class TrashStore {
         File folder=e.original.getParentFile();
         // Don't recreate unknown directories; only restore to the original existing parent.
         if (folder==null || !folder.isDirectory()) return false;
-        if (!e.payload.renameTo(e.original)) return false;
+        try { Files.move(e.payload.toPath(),e.original.toPath()); }
+        catch (IOException | SecurityException problem) { return false; }
         new File(index,e.id+".properties").delete();
         return true;
     }
+    /** On collision, restore beside the original using a conflict-free name. Never overwrite. */
+    public synchronized File restoreWithNewName(Entry e) {
+        if (!known(e)) return null;
+        return restoreWithNewNameVerified(e);
+    }
+    private File restoreWithNewNameVerified(Entry e) {
+        if (!e.payload.isFile() || e.payload.length()!=e.size) return null;
+        File folder=e.original.getParentFile();
+        if(folder==null || !folder.isDirectory() || Files.isSymbolicLink(folder.toPath())) return null;
+        String name=e.original.getName();
+        int dot=name.lastIndexOf('.');
+        String stem=(dot>0?name.substring(0,dot):name);
+        String extension=(dot>0?name.substring(dot):"");
+        // Limit attempts so an attacker cannot force an infinite rename loop.
+        for(int i=1;i<=100;i++) {
+            File destination=new File(folder,stem+" (recovered "+i+")"+extension);
+            if(destination.exists() || Files.isSymbolicLink(destination.toPath()))continue;
+            try { Files.move(e.payload.toPath(),destination.toPath()); }
+            catch (java.nio.file.FileAlreadyExistsException exists) { continue; }
+            catch (IOException | SecurityException problem) { return null; }
+            new File(index,e.id+".properties").delete();
+            return destination;
+        }
+        return null;
+    }
+
     /** Detailed result so a failed disk deletion is never reported as a success. */
     public static final class PurgeResult {
         public final Entry entry;
@@ -155,12 +194,21 @@ public final class TrashStore {
         }
     }
 
-    /** One verified snapshot, avoiding hundreds of repeated O(N) metadata reads. */
+    /** Receives progress from the worker thread after each file was processed. */
+    public interface PurgeProgress { void onProcessed(int completed,int total); }
+
     public synchronized List<PurgeResult> purgeBatch(List<Entry> requested) {
+        return purgeBatch(requested,null);
+    }
+
+    /** One verified snapshot, avoiding hundreds of repeated O(N) metadata reads. */
+    public synchronized List<PurgeResult> purgeBatch(List<Entry> requested,PurgeProgress progress) {
         Map<String,Entry> current=new HashMap<>();
         for (Entry item:list()) current.put(item.id,item);
         List<PurgeResult> outcomes=new ArrayList<>();
+        int completed=0;
         for (Entry supplied:requested) {
+            try {
             Entry e=supplied==null?null:current.remove(supplied.id);
             if (e==null || supplied==null || !e.original.equals(supplied.original)
                     || !e.payload.equals(supplied.payload) || e.size!=supplied.size) {
@@ -189,6 +237,10 @@ public final class TrashStore {
             } catch (IOException | SecurityException ex) {
                 outcomes.add(new PurgeResult(e,false,ex.getClass().getSimpleName()+": "+
                         (ex.getMessage()==null?"Erişim hatası":ex.getMessage())));
+            }
+            } finally {
+                completed++;
+                if(progress!=null)progress.onProcessed(completed,requested.size());
             }
         }
         return outcomes;

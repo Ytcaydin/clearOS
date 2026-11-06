@@ -37,7 +37,7 @@ jobs:
       - name: APK'yı artifact olarak yükle
         uses: actions/upload-artifact@v4
         with:
-          name: ClearOS-Ultra-v4-debug-apk
+          name: ClearOS-Ultra-v5-rc1-debug-apk
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 30

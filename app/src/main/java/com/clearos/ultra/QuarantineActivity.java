@@ -15,6 +15,7 @@ import android.widget.LinearLayout;
 import android.widget.ListView;
 import android.widget.TextView;
 import android.widget.Button;
+import android.widget.ProgressBar;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -30,7 +31,7 @@ public final class QuarantineActivity extends Activity {
     private final ExecutorService io=Executors.newSingleThreadExecutor();
     private final Set<String> checked=new HashSet<>();
     private final ArrayList<TrashStore.Entry> all=new ArrayList<>(), visible=new ArrayList<>();
-    private ListView list;private TextView summary,sub,progress;
+    private ListView list;private TextView summary,sub,progress;private ProgressBar opBar;
     private Button restore,delete,select;
     private boolean busy=false,sortLargest=false,filterLarge=false;
     private QuarantineManager manager;
@@ -56,6 +57,8 @@ public final class QuarantineActivity extends Activity {
         LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,-1,1);lp.leftMargin=ModernUi.dp(this,8);
         toolbar.addView(large,lp);large.setOnClickListener(v->{filterLarge=!filterLarge;large.setText(filterLarge?"Tüm dosyalar":"Büyük dosyalar");applyFilter();});
         progress=ModernUi.muted(this,"Yükleniyor…",12);root.addView(progress,ModernUi.space(this,-1,-2,12));
+        opBar=ModernUi.progress(this,0);opBar.setVisibility(View.GONE);
+        root.addView(opBar,ModernUi.space(this,-1,7,7));
         list=new ListView(this);list.setDivider(null);list.setDividerHeight(ModernUi.dp(this,7));
         list.setCacheColorHint(0);list.setBackgroundColor(ModernUi.BG);
         list.setAdapter(new EntriesAdapter());root.addView(list,new LinearLayout.LayoutParams(-1,0,1));
@@ -72,7 +75,7 @@ public final class QuarantineActivity extends Activity {
     private Set<String> ids(List<TrashStore.Entry> values){Set<String> out=new HashSet<>();for(TrashStore.Entry e:values)out.add(e.id);return out;}
     private void reload(){busy=true;updateButtons();progress.setText("Karantina yeniden okunuyor…");
         io.execute(()->{List<TrashStore.Entry> entries=manager.list();runOnUiThread(()->{
-            if(isDestroyed())return;busy=false;all.clear();all.addAll(entries);
+            if(isDestroyed())return;busy=false;opBar.setVisibility(View.GONE);all.clear();all.addAll(entries);
             checked.retainAll(ids(all));applyFilter();
         });});
     }
@@ -101,9 +104,18 @@ public final class QuarantineActivity extends Activity {
                 .setNegativeButton("Vazgeç",null).setPositiveButton("Kalıcı sil",(d,w)->purge(items)).show();
     }
     private void purge(List<TrashStore.Entry> items){busy=true;updateButtons();progress.setText("Dosyalar tek tek doğrulanıyor ve siliniyor…");
+        opBar.setProgress(0);opBar.setVisibility(View.VISIBLE);
         io.execute(()->{
             long before=primaryFree();
-            List<TrashStore.PurgeResult> outcomes=manager.purgeBatch(items);
+            List<TrashStore.PurgeResult> outcomes=manager.purgeBatch(items,(done,total)->{
+                if(done==1 || done==total || done%8==0)runOnUiThread(()->{
+                    if(!isDestroyed()) {
+                        opBar.setProgress(Math.round(done*1000f/Math.max(1,total)));
+                        progress.setText(done+" / "+total+" dosya işlendi ("+
+                            Math.round(done*100f/Math.max(1,total))+"%) · İşlem sürüyor…");
+                    }
+                });
+            });
             long after=primaryFree();
             int success=0;long bytes=0;StringBuilder errors=new StringBuilder();
             for(TrashStore.PurgeResult r:outcomes){
@@ -134,15 +146,26 @@ public final class QuarantineActivity extends Activity {
     private void confirmRestore(){ArrayList<TrashStore.Entry> items=selectedEntries();if(items.isEmpty())return;
         new AlertDialog.Builder(this).setTitle("Geri yükle")
                 .setMessage(items.size()+" öğe özgün klasörlerine döndürülecek. Hedefte aynı adlı dosya varsa üzerine yazılmayacak.")
-                .setNegativeButton("Vazgeç",null).setPositiveButton("Geri yükle",(d,w)->restore(items)).show();
+                .setNegativeButton("Vazgeç",null)
+                .setNeutralButton("Çakışmada yeni isimle",(d,w)->restore(items,true))
+                .setPositiveButton("Geri yükle",(d,w)->restore(items,false)).show();
     }
-    private void restore(List<TrashStore.Entry> items){busy=true;updateButtons();progress.setText("Dosyalar doğrulanıp geri yükleniyor…");
+    private void restore(List<TrashStore.Entry> items,boolean renameConflicts){busy=true;updateButtons();progress.setText("Dosyalar doğrulanıp geri yükleniyor…");
+        opBar.setProgress(0);opBar.setVisibility(View.VISIBLE);
         io.execute(()->{
-            java.util.Set<String> restoredIds=manager.restoreBatch(items);
+            // One index snapshot per volume (not one per file); optional rename-on-conflict.
+            java.util.Set<String> restoredIds=manager.restoreBatch(items,renameConflicts,(done,total)->{
+                if(done==total || done%8==0)runOnUiThread(()->{
+                    if(!isDestroyed()){
+                        opBar.setProgress(Math.round(done*1000f/Math.max(1,total)));
+                        progress.setText(done+" / "+total+" geri yükleme kontrol edildi");
+                    }
+                });
+            });
             int ok=restoredIds.size();StringBuilder errors=new StringBuilder();
             for(TrashStore.Entry e:items) {
                 if(!restoredIds.contains(e.id)&&errors.length()<1800)errors.append("• ").append(e.original.getName())
-                        .append(" (orijinal yol yok, çakışma veya erişim sorunu)\n");
+                        .append(" (yol yok, isim çakışması veya erişim sorunu)\n");
             }
             int done=ok;String detail=errors.toString();ActionLog.add(this,"Geri yükleme",done+" başarı · "+(items.size()-done)+" hata");
             runOnUiThread(()->{if(isDestroyed())return;busy=false;checked.clear();reload();

@@ -54,6 +54,15 @@ public final class BatchPurgeSelfTest {
         ok(f1.exists()&&f2.exists()&&f1.length()==3&&f2.length()==4,"batch restored originals");
         ok(Files.readAllBytes(f3.toPath()).length==2&&r3.payload.exists(),"conflict not overwritten");
         ok(vault.list().size()==1,"only conflicting entry left");
+        // Same conflicting entry, now with rename-on-conflict + progress: restored beside, never overwritten.
+        final int[] last={0,0};
+        Set<String> renamed=vault.restoreBatch(Arrays.asList(r3,r3),true,(n,t)->{last[0]=n;last[1]=t;});
+        File side=new File(f3.getParentFile(),"f3 (recovered 1).apk");
+        ok(renamed.size()==1&&renamed.contains(r3.id),"rename batch restored once: "+renamed);
+        ok(last[0]==2&&last[1]==2,"progress reaches total: "+last[0]+"/"+last[1]);
+        ok(side.isFile()&&Files.readAllBytes(side.toPath()).length==1,"recovered copy intact");
+        ok(Files.readAllBytes(f3.toPath()).length==2,"original target still untouched");
+        ok(vault.list().isEmpty(),"quarantine empty after rename restore");
         System.out.println("PASS: batch purge, repeated delete, spoof reject, restoration, batch restore, payload verification");
     }
 }

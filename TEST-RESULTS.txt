@@ -1,21 +1,20 @@
-ClearOS Ultra v4.0.0 | verification record
-Date: 2026-11-06
+ClearOS Ultra 5.0.0 RC1 — local validation 2026-11-06
 
-JVM tests (OpenJDK 21, local):
-PASS ScannerSelfTest: categories, exact duplicates, protected roots, changed file detection.
-PASS UltraCoreSelfTest: V3 vault, restore collision, purge and exclusions.
-PASS QuarantineRegressionTest: two volume vault layout, restore and delete, .nomedia, scan exclusions.
-PASS BatchPurgeSelfTest: verified batch deletion, second deletion rejection, forged entry refusal, restore preserved.
-PASS JavaSyntaxCheck: all Android Java files parsed as syntactically valid; NOT SDK symbol/type linking.
+JDK portable tests:
+PASS ScannerSelfTest — duplicate hash verification, categories and protected directories
+PASS UltraCoreSelfTest — quarantine, collision and core logic
+PASS QuarantineRegressionTest — per-volume quarantine, restore, purge and exclusions
+PASS BatchPurgeSelfTest — batch deletion and forged/stale entry rejection
+PASS V5RecoverySelfTest — new-name restore, no overwrite, progress callback, folder labels
 
-Additional static checks: Android manifest / resource XML, CircleCI & GitHub workflow YAML, shell syntax (see verification script output).
+Parse-only source check: PASS (24 Android Java source files)
+Portable quality check: PASS (4 XML files, manifest privacy, build metadata, CI and recovery code)
 
-NOT TESTED:
-- Android Gradle Plugin compilation and full APK artifact.
-- Any emulator/real phone install or UI rendering; Android 15/16 edge-to-edge.
-- Real primary/SD FUSE permanent delete after V4 changes.
-- Shizuku/Porter service binding and cache commands.
-- Media3 video codec and photo/media UI on the phone.
-- Signed in-place upgrade from the user's installed V3.1 APK.
+NOT PERFORMED:
+- Android Gradle Plugin compilation / APK generation (SDK not installed here)
+- Running this V5 code on a real Android phone
+- Android 11–16 instrumented tests, UI accessibility, Shizuku binder integration
+- Media3 codec support and sustained performance on 100,000+ files
+- Power consumption and thermal profile measurement
 
-The user has confirmed that V3.1 scans and quarantine moves ran on their own phone; that does not certify V4 or permanent deletion.
+No file deletion on the user's phone was attempted; all regression tests use temporary test directories.
