@@ -1,0 +1,15 @@
+ClearOS Ultra 3.1.0 — Offline Verification
+Date: 2026-11-06
+
+PASS: ScannerSelfTest — SHA-256 duplicates, preservation priority, forbidden paths, stale-file refusal
+PASS: UltraCoreSelfTest — quarantine, restore collision, purge, forged entry rejection, storage map, dHash
+PASS: QuarantineRegressionTest — two storage roots, per-volume vault path, .nomedia, recovery and purge, vault excluded from scan, immutable exclude rules
+PASS: JavaSyntaxCheck — 18 Android Java source files parsed by Java compiler parser (syntax only; not linked against Android SDK)
+PASS: Manifest, launcher icon and notification icon XML syntax (3 files)
+PASS: CircleCI config YAML parsed
+PASS: gradlew Bash script syntax
+
+NOT RUN: Android Gradle assembleDebug (Android SDK, Gradle wrapper JAR, external Maven downloads unavailable here)
+NOT RUN: Physical Android 11–16 install and permissions, cross-FUSE rename behavior, USB/SD card behavior, Notification runtime permission flow, Shizuku handshake, Media3 codec/transcode
+
+Do not present this ZIP as a verified APK, or source syntax checks as proof of Android compilation. A live CircleCI run is required.
