@@ -58,7 +58,7 @@ public final class DeviceToolsActivity extends Activity {
         new AlertDialog.Builder(this).setTitle(title).setMessage(msg).setPositiveButton("Tamam",null).show();}
 
     private static final int REQ_SYSTEM_CACHE=611;
-    private long systemCacheFreeBefore=-1;
+    private long systemCacheFreeBefore=-1, systemCacheOpenedAt=0;
 
     /** Free bytes on the internal data volume (where app caches live). */
     private static long freeBytes(){
@@ -99,6 +99,12 @@ public final class DeviceToolsActivity extends Activity {
         super.onActivityResult(request,result,data);
         if(request!=REQ_SYSTEM_CACHE)return;
         long before=systemCacheFreeBefore;systemCacheFreeBefore=-1;
+        long shownMs=android.os.SystemClock.elapsedRealtime()-systemCacheOpenedAt;
+        android.content.SharedPreferences device=getSharedPreferences("device",0);
+        // Closed by itself almost instantly = the phone does not provide this screen (e.g. Nothing OS).
+        // A person cancelling takes longer; a later success clears the flag again.
+        if(result!=RESULT_OK && shownMs<1500) device.edit().putBoolean("system_cache_screen_missing",true).apply();
+        if(result==RESULT_OK) device.edit().remove("system_cache_screen_missing").apply();
         String report;
         if(result==RESULT_OK) report="Android harici önbellek temizliğini onayladı.\n\n"+freedText(before,freeBytes());
         else report="Android ekranı iptal edildi ya da bu telefonda gösterilmedi.\n\n"
@@ -195,14 +201,18 @@ public final class DeviceToolsActivity extends Activity {
         status.addView(facts,ModernUi.space(this,-1,-2,16));
         add(status,16);
         add(ModernUi.section(this,"Önbellek",null),26);
-        add(ModernUi.actionCard(this,"◉","Android sistem ekranı","Harici önbellek · senin onayınla",()->{
+        boolean systemScreenMissing=getSharedPreferences("device",0).getBoolean("system_cache_screen_missing",false);
+        LinearLayout systemCard=ModernUi.actionCard(this,"◉","Android sistem ekranı",
+                systemScreenMissing?"Bu telefonda desteklenmiyor · ADB temizliğini kullan":"Harici önbellek · senin onayınla",()->{
             if(!Environment.isExternalStorageManager()) {alert("İzin gerekli","Önce Tüm dosyalara erişim izni ver.");return;}
-            systemCacheFreeBefore=freeBytes();
+            systemCacheFreeBefore=freeBytes();systemCacheOpenedAt=android.os.SystemClock.elapsedRealtime();
             try{startActivityForResult(new Intent(StorageManager.ACTION_CLEAR_APP_CACHE),REQ_SYSTEM_CACHE);}
             catch(Exception e){systemCacheFreeBefore=-1;
                 ActionLog.add(this,"Sistem önbellek ekranı","Açılamadı: "+e.getClass().getSimpleName());
                 alert("Desteklenmiyor","Telefon bu ekranı sunmuyor.");}
-        }),0);
+        });
+        if(systemScreenMissing)systemCard.setAlpha(.45f);
+        add(systemCard,0);
         add(ModernUi.actionCard(this,"⚡","ADB önbelleğini daralt","Tüm uygulamaların önbelleği · ~1 dk",()->{
             if(!access.approved()){alert("İzin yok","Önce Shizuku servisi ve uygulama izni gerekli.");return;}
             new AlertDialog.Builder(this).setTitle("ADB önbellek temizliği")

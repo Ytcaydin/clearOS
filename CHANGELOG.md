@@ -1,5 +1,8 @@
 # Sürüm Geçmişi
 
+## 5.1.4 — Sistem önbellek ekranı algılama (2026-11-06)
+- Android'in önbellek ekranı 1,5 sn içinde kendiliğinden kapanırsa (ör. Nothing OS) bu hatırlanır; kart "Bu telefonda desteklenmiyor · ADB temizliğini kullan" der ve soluk görünür. Başarılı bir kullanımda işaret kalkar.
+
 ## 5.1.3 — Rötuş (2026-11-06)
 - ADB önbellek süresi 1 saniyenin altındaysa "1 saniyeden kısa" yazılıyor ("0 sn" yerine).
 - İşlem günlüğünde kabuk testi yalnızca `uid=2000(shell)` olarak kaydediliyor.
