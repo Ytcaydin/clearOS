@@ -13,6 +13,20 @@ android {
         versionCode 51
         versionName '5.0.0-rc2'
     }
+    // Stable signing so a new APK installs as an UPDATE (no uninstall, data kept).
+    // CI decodes the CLEAROS_DEBUG_KEYSTORE GitHub secret and exports its path. Without it
+    // (local builds, forks) Gradle keeps the machine's own debug key.
+    signingConfigs {
+        debug {
+            def ks = System.getenv('CLEAROS_KEYSTORE_FILE')
+            if (ks && file(ks).isFile()) {
+                storeFile file(ks)
+                storePassword 'clearos-debug'
+                keyAlias 'clearos'
+                keyPassword 'clearos-debug'
+            }
+        }
+    }
     buildFeatures { aidl true }
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17

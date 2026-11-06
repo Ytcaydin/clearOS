@@ -37,8 +37,24 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
+      - name: Sabit imza anahtarı (güncelleme olarak kurulabilsin)
+        env:
+          KEYSTORE_B64: ${{ secrets.CLEAROS_DEBUG_KEYSTORE }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/clearos-debug.keystore"
+            echo "CLEAROS_KEYSTORE_FILE=$RUNNER_TEMP/clearos-debug.keystore" >> "$GITHUB_ENV"
+          else
+            echo "::warning::CLEAROS_DEBUG_KEYSTORE secret tanımlı değil. APK rastgele debug anahtarıyla imzalanacak ve eski sürümün üzerine güncelleme olarak kurulamayacak."
+          fi
+
       - name: Debug APK derle
         run: ./gradlew --no-daemon --stacktrace assembleDebug
+
+      - name: İmzayı göster
+        run: |
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs app/build/outputs/apk/debug/*.apk | grep -E "SHA-256|DN"
+          [ -n "${CLEAROS_KEYSTORE_FILE:-}" ] && echo "Sabit anahtar kullanıldı." || echo "UYARI: rastgele debug anahtarı."
 
       - name: APK'yı artifact olarak yükle
         uses: actions/upload-artifact@v4

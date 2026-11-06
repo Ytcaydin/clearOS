@@ -1,5 +1,10 @@
 # Sürüm Geçmişi
 
+## Sabit imza — doğrudan güncelleme (2026-11-06)
+- CI artık her derlemede rastgele değil, `CLEAROS_DEBUG_KEYSTORE` GitHub secret'ındaki sabit anahtarla imzalıyor; yeni APK eskisinin üzerine **güncelleme** olarak kurulur, ayarlar korunur.
+- Secret yoksa derleme yine çalışır ama uyarı verir (rastgele anahtar).
+- İş akışı APK sertifikasının SHA-256 özetini yazdırır.
+
 ## V5.0.0 RC2 — birleştirme notu (2026-11-06)
 - RC2, düzeltilmiş `v5.0.0-rc1` dalı üzerine birleştirildi; AIDL işlem kodları, `setAllCaps`, lambda adı, dikey video ölçekleme, Gradle wrapper ve toplu geri yükleme (`restoreBatch`) korunuyor.
 - Ana sayfa karantina boyutu: RC2'nin `io` executor'ındaki eşdeğer kodu yerine ayrı arka plan iş parçacığı korundu (tarama sürerken de güncellenir, ilk açılışta "-1 B" yerine "…" gösterir).

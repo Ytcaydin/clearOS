@@ -5,3 +5,7 @@ local.properties
 *.iml
 *.apk
 
+
+# Signing keys never go into this public repo
+*.keystore
+*.jks
