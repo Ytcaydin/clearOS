@@ -38,10 +38,50 @@ public final class UltraAccess {
     /** The one fixed command ClearOS ever runs with shell identity. No user input reaches it. */
     private static final String[] TRIM={"/system/bin/pm","trim-caches","999G","internal"};
 
+    /** Harmless probe: proves the Shizuku shell pipe works end-to-end before the real command. */
+    private static final String[] PROBE={"/system/bin/id"};
+    private static final long PROBE_TIMEOUT_MS=15_000, TRIM_TIMEOUT_MS=300_000;
+
+    /** Outcome of one remote command. Written by helper threads, read after join(). */
+    private static final class Run {
+        volatile boolean started,timedOut;volatile int code=-1;volatile Throwable error;
+        final StringBuffer out=new StringBuffer(),err=new StringBuffer();
+        String text(){String o=out.toString().trim(),e=err.toString().trim();
+            return (o+(o.isEmpty()||e.isEmpty()?"":"\n")+e).trim();}
+    }
+    private static Thread drain(java.io.InputStream in,StringBuffer into){
+        Thread t=new Thread(()->{
+            try(java.io.InputStream s=in){byte[] b=new byte[2048];int n;
+                while((n=s.read(b))!=-1) if(into.length()<8192)into.append(new String(b,0,n,java.nio.charset.StandardCharsets.UTF_8));}
+            catch(Throwable ignored){}
+        },"ultra-drain");t.setDaemon(true);t.start();return t;
+    }
     /**
-     * Primary path: run TRIM inside Shizuku's own shell process (Shizuku.newProcess). It needs no
-     * separate user-service process, which on some devices never comes up. newProcess is not public
-     * in API 13, so it is reached by reflection; on any failure the user-service path is used.
+     * Completion = the process exiting (waitFor), not stdout EOF; stdout and stderr are drained
+     * on their own threads and stdin is closed at once so nothing can wait on it.
+     */
+    private static Run run(java.lang.reflect.Method newProcess,String[] command,long timeoutMs){
+        Run r=new Run();java.lang.Process p;
+        try{p=(java.lang.Process)newProcess.invoke(null,command,null,null);r.started=true;}
+        catch(Throwable e){r.error=e instanceof java.lang.reflect.InvocationTargetException&&e.getCause()!=null?e.getCause():e;return r;}
+        try{p.getOutputStream().close();}catch(Throwable ignored){}
+        Thread out=drain(p.getInputStream(),r.out),err=drain(p.getErrorStream(),r.err);
+        Thread waiter=new Thread(()->{try{r.code=p.waitFor();}catch(Throwable e){r.error=e;}},"ultra-wait");
+        waiter.setDaemon(true);waiter.start();
+        try{waiter.join(timeoutMs);}catch(InterruptedException e){Thread.currentThread().interrupt();}
+        if(waiter.isAlive()){r.timedOut=true;try{p.destroy();}catch(Throwable ignored){}}
+        try{out.join(1500);err.join(1500);}catch(InterruptedException e){Thread.currentThread().interrupt();}
+        return r;
+    }
+    private static String describe(Throwable e){
+        return e.getClass().getSimpleName()+(e.getMessage()==null?"":" — "+e.getMessage());
+    }
+
+    /**
+     * Primary path: run inside Shizuku's own shell process (Shizuku.newProcess, reached by reflection
+     * because it is not public in API 13). A separate user-service process never came up on some
+     * devices (Nothing Phone 2a, Shizuku 13.5). If newProcess cannot be used, the user service is tried.
+     * Steps and timings go to the on-device action log.
      */
     public void trimCaches(Stage stage,Callback cb) {
         if(!approved()) {cb.done("Shizuku/Porter çalışmıyor veya izni verilmemiş.");return;}
@@ -50,40 +90,56 @@ public final class UltraAccess {
         try {
             newProcess=Shizuku.class.getDeclaredMethod("newProcess",String[].class,String[].class,String.class);
             newProcess.setAccessible(true);
-        } catch(Throwable e) {trimViaUserService(stage,cb);return;}
-        if(stage!=null)stage.update("Önbellekler daraltılıyor… (1 dakikaya kadar sürebilir)");
+        } catch(Throwable e) {ActionLog.add(context,"ADB önbellek","newProcess yok, UserService deneniyor: "+describe(e));
+            trimViaUserService(stage,cb);return;}
         java.util.concurrent.atomic.AtomicBoolean finished=new java.util.concurrent.atomic.AtomicBoolean(false);
-        java.util.concurrent.atomic.AtomicReference<java.lang.Process> running=new java.util.concurrent.atomic.AtomicReference<>();
         java.util.function.Consumer<String> finish=message->main.post(()->{
             if(finished.compareAndSet(false,true))cb.done(message);
         });
-        main.postDelayed(()->{
+        long t0=android.os.SystemClock.elapsedRealtime();
+        if(stage!=null)stage.update("Shizuku kabuğu test ediliyor…");
+        // Live elapsed-time ticker while the trim runs.
+        Runnable[] tick=new Runnable[1];
+        java.util.concurrent.atomic.AtomicBoolean trimming=new java.util.concurrent.atomic.AtomicBoolean(false);
+        tick[0]=()->{
             if(finished.get())return;
-            java.lang.Process p=running.get();
-            if(p!=null)try{p.destroy();}catch(Throwable ignored){}
-            finish.accept("İşlem 2 dakikada tamamlanmadı (zaman aşımı).");
-        },TOTAL_TIMEOUT_MS);
+            if(trimming.get()&&stage!=null){
+                long sec=(android.os.SystemClock.elapsedRealtime()-t0)/1000;
+                stage.update("Önbellekler daraltılıyor · "+sec+" sn\n(5 dakikaya kadar sürebilir)");
+            }
+            main.postDelayed(tick[0],1000);
+        };
+        main.post(tick[0]);
+        // Last-resort watchdog in case a helper thread is stuck in a remote call.
+        main.postDelayed(()->finish.accept("İşlem yanıt vermedi (zaman aşımı)."),TRIM_TIMEOUT_MS+PROBE_TIMEOUT_MS+30_000);
         new Thread(()->{
-            java.lang.Process p;
-            try {p=(java.lang.Process)newProcess.invoke(null,TRIM,null,null);}
-            catch(Throwable e) {
-                // Reflection or remote start failed: fall back to the user service on the main thread.
+            Run probe=run(newProcess,PROBE,PROBE_TIMEOUT_MS);
+            long probeMs=android.os.SystemClock.elapsedRealtime()-t0;
+            if(!probe.started){
+                ActionLog.add(context,"ADB önbellek","newProcess başlatılamadı ("+describe(probe.error)+"), UserService deneniyor");
                 main.post(()->{if(finished.compareAndSet(false,true))trimViaUserService(stage,cb);});
                 return;
             }
-            running.set(p);
-            String output;int code;
-            try (java.io.InputStream in=p.getInputStream()) {
-                java.io.ByteArrayOutputStream buf=new java.io.ByteArrayOutputStream();
-                byte[] block=new byte[2048];int n;
-                while((n=in.read(block))!=-1) if(buf.size()<8192)buf.write(block,0,n);
-                code=p.waitFor();
-                output=buf.toString("UTF-8");
-            } catch(Throwable e) {
-                finish.accept("ADB işlemi başarısız: "+e.getClass().getSimpleName()+(e.getMessage()==null?"":" — "+e.getMessage()));
+            String probeText=probe.text();
+            ActionLog.add(context,"ADB önbellek","id testi "+probeMs+" ms · kod "+probe.code+(probe.timedOut?" · zaman aşımı":"")+" · "+probeText);
+            if(probe.timedOut||probe.code!=0){
+                finish.accept("Shizuku kabuğu yanıt vermedi.\n\nTest komutu (id): "+(probe.timedOut?"15 sn'de bitmedi":"kod "+probe.code)
+                        +(probeText.isEmpty()?"":"\n"+probeText)+"\n\nShizuku uygulamasında servisi durdurup yeniden başlatmayı dene.");
                 return;
-            } finally {try{p.destroy();}catch(Throwable ignored){}}
-            finish.accept("pm trim-caches çıkış kodu: "+code+"\n"+output);
+            }
+            trimming.set(true);
+            Run trim=run(newProcess,TRIM,TRIM_TIMEOUT_MS);
+            long sec=(android.os.SystemClock.elapsedRealtime()-t0)/1000;
+            String text=trim.text();
+            ActionLog.add(context,"ADB önbellek","trim-caches "+sec+" sn · kod "+trim.code+(trim.timedOut?" · zaman aşımı":"")
+                    +(trim.error!=null?" · "+describe(trim.error):"")+(text.isEmpty()?"":" · "+text));
+            if(trim.timedOut){
+                finish.accept("pm trim-caches 5 dakikada bitmedi (zaman aşımı).\nKabuk testi başarılıydı ("+probeText+").");
+            } else if(trim.error!=null){
+                finish.accept("ADB işlemi başarısız: "+describe(trim.error));
+            } else {
+                finish.accept("pm trim-caches çıkış kodu: "+trim.code+"\nSüre: "+sec+" sn"+(text.isEmpty()?"":"\n"+text));
+            }
         },"ultra-cache-cleaner").start();
     }
 

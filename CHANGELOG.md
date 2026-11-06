@@ -1,5 +1,11 @@
 # Sürüm Geçmişi
 
+## 5.1.2 — ADB önbellek tanılama (2026-11-06)
+- Önce zararsız `id` testi: Shizuku kabuğunun uçtan uca çalıştığı doğrulanır.
+- Bitiş artık sürecin sonlanmasıyla (waitFor) algılanıyor; stdout/stderr ayrı iş parçacıklarında okunuyor, stdin hemen kapatılıyor.
+- Canlı süre sayacı; zaman sınırı 5 dakika; zaman aşımında da öncesi/sonrası boş alan gösteriliyor.
+- Her adım süre ve çıkış koduyla işlem günlüğüne yazılıyor.
+
 ## 5.1.1 — ADB önbellek temizliği düzeltmesi (2026-11-06)
 - **Düzeltme:** `pm trim-caches` artık doğrudan Shizuku'nun kabuk sürecinde çalışıyor (`Shizuku.newProcess`). Ayrı UserService süreci bazı telefonlarda (ör. Nothing Phone 2a, Shizuku 13.5) hiç başlamıyor ve 20 sn zaman aşımı veriyordu; o yol artık yalnızca yedek.
 - Hata durumunda "alan açılmadı" ifadesi gösterilmiyor; yalnızca hatanın kendisi.
